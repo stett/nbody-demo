@@ -1,0 +1,6 @@
+[submodule "external/nbody"]
+	path = external/nbody
+	url = git@github.com:stett/nbody.git
+[submodule "external/Cinder"]
+	path = external/Cinder
+	url = git@github.com:stett/Cinder.git
