@@ -162,10 +162,19 @@ void nbody::Demo::setup()
     gl::enableDepthRead();
 }
 
+void nbody::Demo::spawn_galaxy(nbody::Vector pos, nbody::Vector axis, uint32_t num)
+{
+    sim.bodies.resize(sim.bodies.size() + num);
+    nbody::util::disk(sim.bodies.end() - num, sim.bodies.end(), { .center=pos, .axis=axis });
+}
+
 void nbody::Demo::setup_sim_data()
 {
-    sim.bodies.resize(target_num_elems);
-    nbody::util::disk(sim.bodies.begin(), sim.bodies.end());
+    // remove all bodies from the sim
+    sim.bodies.clear();
+
+    // add a disk galaxy at the origin
+    spawn_galaxy({0,0,0}, {0,0,1}, target_num_elems);
 
     // this forces an update to the acceleration structure, which is
     // needed if we want to update the structure rendering
@@ -176,7 +185,6 @@ void nbody::Demo::update_gpu_data()
 {
     // Update the CPU buffer for particle data
     gpu_particle_data.resize(sim.bodies.size() * 8);
-    //for (Body& body : sim.bodies)
     for (size_t i = 0; i < sim.bodies.size(); i++)
     {
         nbody::Body& body = sim.bodies[i];
@@ -200,7 +208,6 @@ void nbody::Demo::update_gpu_data()
         float avg_potential = 0;
         const float num_nodes_inv = 1.f / float(num_nodes);
         for (const nbody::bh::Node& node : sim.acc_tree.nodes())
-            //for (const bh3::Node& node : sim.acc_tree.nodes())
         {
             const vec3 half = vec3(node.bounds.size * .5f);
             const vec3 bounds_center = vec3(node.bounds.center.x, node.bounds.center.y, node.bounds.center.z);
@@ -213,7 +220,6 @@ void nbody::Demo::update_gpu_data()
             const nbody::Vector& center = node.bounds.center;
             float potential = 0;
             sim.acc_tree.apply(center, [&potential, &center](const nbody::bh::Node& node) {
-                //sim.acc_tree.apply(center.to_bh3(), [&potential, &center](const bh3::Node& node) {
                 const vec3 delta = vec3(node.com.x, node.com.y, node.com.z) - vec3(center.x, center.y, center.z);
                 potential += node.mass / dot(delta, delta);
             });
@@ -227,28 +233,9 @@ void nbody::Demo::update_gpu_data()
         {
             float& potential = gpu_bounds_data[i+6];
             potential = std::min(1.f, potential * avg_potential_inv);
-
         }
         vbo_bounds->bufferData(gpu_bounds_data.size() * sizeof(float), gpu_bounds_data.data(), GL_DYNAMIC_DRAW);
     }
-
-    /*
-    if (draw_sbvh_bounds)
-    {
-        // Update the CPU buffer for tree data
-        // Create and populate VBO containing bounds data
-        std::vector<vec3> bounds_data;
-        const size_t num_nodes = sim.sbvhtree.num_nodes;
-        bounds_data.reserve(num_nodes * 2);
-        for (size_t i = 0; i < num_nodes; ++i)
-        {
-            const sbvh::Bounds& bounds = sim.sbvhtree.nodes[i].bounds;
-            bounds_data.emplace_back(bounds.min[0], bounds.min[1], bounds.min[2]);
-            bounds_data.emplace_back(bounds.max[0], bounds.max[1], bounds.max[2]);
-        }
-        vbo_sbvh_bounds->bufferData(bounds_data.size() * sizeof(vec3), bounds_data.data(), GL_DYNAMIC_DRAW);
-    }
-     */
 }
 
 void nbody::Demo::update_selected_body()
@@ -378,11 +365,34 @@ void nbody::Demo::mouseWheel(MouseEvent event)
     if (cam_target_dist < 1.f) { cam_target_dist = 1.f; }
 }
 
+void nbody::Demo::mouseDown(MouseEvent event)
+{
+    // shift click spawns a new galaxy
+    if (event.isShiftDown())
+    {
+        const vec3 mp = mouse_world_pos();
+        const nbody::Vector pos = {mp.x, mp.y, mp.z};
+        const nbody::Vector axis = {0,0,1};
+        spawn_galaxy(pos, axis, target_num_elems);
+    }
+}
+
 void nbody::Demo::draw()
 {
     gl::clear(ColorA(0, 0, 0, 1), true);
 
     gl::setMatrices(camera );
+
+    {
+        const vec3 mp = mouse_world_pos();
+        gl::color(1, .2, .2, .9);
+        gl::drawLine(vec3(0), vec3(mp.x, 0, 0));
+        gl::color(.2, 1, .2, .9);
+        gl::drawLine(vec3(mp.x, 0, 0), vec3(mp.x, mp.y, 0));
+        gl::color(.4, .4, 1, .9);
+        gl::drawLine(vec3(mp.x, mp.y, 0), vec3(mp.x, mp.y, mp.z));
+    }
+
 
     if (draw_bh_bounds)
     {
@@ -491,7 +501,37 @@ void nbody::Demo::mouse_ray(vec3& out_ray_origin, vec3& out_ray_direction) const
     const vec2 mouse_homo = vec2(
             2.0f * (float)mouse_pos.x / (float)getWindowWidth() - 1.0f,
             1.0f - 2.0f * (float)mouse_pos.y / (float)getWindowHeight());
-    out_ray_origin = homogeneous_to_world(vec3(mouse_homo, 0));
-    const vec3 ray_end = homogeneous_to_world(vec3(mouse_homo, 1));
-    out_ray_direction = glm::normalize(ray_end - out_ray_origin);
+    out_ray_origin = camera.getEyePoint();
+    out_ray_direction = normalize(homogeneous_to_world(vec3(mouse_homo, 0)) - out_ray_origin);
+
+    //out_ray_origin = homogeneous_to_world(vec3(mouse_homo, 0));
+    //const vec3 ray_end = homogeneous_to_world(vec3(mouse_homo, 1));
+    //out_ray_direction = glm::normalize(ray_end - out_ray_origin);
+}
+
+vec3 nbody::Demo::mouse_plane_pos(const vec3& plane_point, const vec3& plane_axis) const
+{
+    vec3 ray_origin;
+    vec3 ray_direction;
+    mouse_ray(ray_origin, ray_direction);
+
+    const vec3 diff = ray_origin - plane_point;
+    float numer = dot(diff, plane_axis);
+    float denom = dot(ray_direction, plane_axis);
+    if (std::numeric_limits<float>::epsilon() > denom && denom > -std::numeric_limits<float>::epsilon()) {
+        return plane_point;
+    }
+    const float t = numer / denom;
+    const vec3 proj = ray_origin - (ray_direction * t);
+    return proj;
+}
+
+vec3 nbody::Demo::mouse_world_pos(const float dist_from_eye) const
+{
+    vec3 ray_origin;
+    vec3 ray_direction;
+    mouse_ray(ray_origin, ray_direction);
+    const vec3 plane_pos = camera.getEyePoint() + (ray_direction * dist_from_eye);
+    const vec3 plane_axis = -ray_direction;
+    return mouse_plane_pos(plane_pos, plane_axis);
 }

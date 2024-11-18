@@ -24,17 +24,21 @@ namespace nbody {
         void mouseMove(MouseEvent event) override;
         void mouseDrag(MouseEvent event) override;
         void mouseWheel(MouseEvent event) override;
+        void mouseDown(MouseEvent event) override;
 
     private:
 
+        void spawn_galaxy(nbody::Vector pos, nbody::Vector axis, uint32_t num);
         void setup_sim_data();
         void setup_acceleration_structure();
         void update_gpu_data();
         void update_selected_body();
 
         // helpers
-        vec3 homogeneous_to_world(const vec3 &homo) const;
-        void mouse_ray(vec3 &out_ray_origin, vec3 &out_ray_direction) const;
+        vec3 homogeneous_to_world(const vec3& homo) const;
+        void mouse_ray(vec3& out_ray_origin, vec3& out_ray_direction) const;
+        vec3 mouse_plane_pos(const vec3& plane_point, const vec3& plane_axis) const;
+        vec3 mouse_world_pos(const float dist_from_eye = 500) const;
 
         // nbody sim;
         nbody::Sim sim;
@@ -71,8 +75,8 @@ namespace nbody {
         vec3 cam_focus_target = glm::vec3(0);
         vec2 cam_angles = glm::vec2(M_PI * .5, 0);
         vec2 cam_target_angles = glm::vec2(M_PI * .5, 0);
-        float cam_dist = sim.size;
-        float cam_target_dist = sim.size;
+        float cam_dist = 500;
+        float cam_target_dist = 500;
 
         // mouse
         ivec2 mouse_pos;
