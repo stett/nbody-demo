@@ -2,6 +2,7 @@
 #include "cinder/app/App.h"
 #include "cinder/gl/gl.h"
 #include "nbody/sim.h"
+#include "nbody/util.h"
 
 using glm::vec2;
 using glm::vec3;
@@ -25,10 +26,11 @@ namespace nbody {
         void mouseDrag(MouseEvent event) override;
         void mouseWheel(MouseEvent event) override;
         void mouseDown(MouseEvent event) override;
+        void mouseUp(MouseEvent event) override;
 
     private:
 
-        void spawn_galaxy(nbody::Vector pos, nbody::Vector axis, uint32_t num);
+        void spawn_galaxy(uint32_t num, nbody::util::DiskArgs args);
         void setup_sim_data();
         void setup_acceleration_structure();
         void update_gpu_data();
@@ -81,5 +83,7 @@ namespace nbody {
         // mouse
         ivec2 mouse_pos;
         ivec2 mouse_delta;
+        bool mouse_drag = false;
+        vec3 mouse_world_drag_origin;
     };
 }

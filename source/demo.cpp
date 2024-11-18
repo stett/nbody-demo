@@ -3,7 +3,6 @@
 #include <random>
 #include "cinder/CinderImGui.h"
 #include "cinder/Display.h"
-#include "nbody/util.h"
 
 using namespace ci;
 using namespace ci::gl;
@@ -162,10 +161,10 @@ void nbody::Demo::setup()
     gl::enableDepthRead();
 }
 
-void nbody::Demo::spawn_galaxy(nbody::Vector pos, nbody::Vector axis, uint32_t num)
+void nbody::Demo::spawn_galaxy(uint32_t num, nbody::util::DiskArgs args)
 {
     sim.bodies.resize(sim.bodies.size() + num);
-    nbody::util::disk(sim.bodies.end() - num, sim.bodies.end(), { .center=pos, .axis=axis });
+    nbody::util::disk(sim.bodies.end() - num, sim.bodies.end(), args);
 }
 
 void nbody::Demo::setup_sim_data()
@@ -174,7 +173,7 @@ void nbody::Demo::setup_sim_data()
     sim.bodies.clear();
 
     // add a disk galaxy at the origin
-    spawn_galaxy({0,0,0}, {0,0,1}, target_num_elems);
+    spawn_galaxy(target_num_elems, { .center={0,0,0}, .axis={0,0,1} });
 
     // this forces an update to the acceleration structure, which is
     // needed if we want to update the structure rendering
@@ -342,8 +341,7 @@ void nbody::Demo::update()
 
 void nbody::Demo::mouseMove(MouseEvent event)
 {
-    const glm::ivec2 new_mouse_pos = event.getPos();
-    mouse_pos = new_mouse_pos;
+    mouse_pos = event.getPos();
 }
 
 void nbody::Demo::mouseDrag(MouseEvent event)
@@ -352,11 +350,14 @@ void nbody::Demo::mouseDrag(MouseEvent event)
     mouse_delta = new_mouse_pos - mouse_pos;
     mouse_pos = new_mouse_pos;
 
-    cam_target_angles[0] -= mouse_delta.x * .01f;
-    cam_target_angles[1] += mouse_delta.y * .01f;
+    if (!mouse_drag)
+    {
+        cam_target_angles[0] -= mouse_delta.x * .01f;
+        cam_target_angles[1] += mouse_delta.y * .01f;
 
-    if (cam_target_angles[1] < -M_PI * .4f) { cam_target_angles[1] = -M_PI * .4f; }
-    if (cam_target_angles[1] > M_PI * .4f) { cam_target_angles[1] = M_PI * .4f; }
+        if (cam_target_angles[1] < -M_PI * .4f) { cam_target_angles[1] = -M_PI * .4f; }
+        if (cam_target_angles[1] > M_PI * .4f) { cam_target_angles[1] = M_PI * .4f; }
+    }
 }
 
 void nbody::Demo::mouseWheel(MouseEvent event)
@@ -370,10 +371,30 @@ void nbody::Demo::mouseDown(MouseEvent event)
     // shift click spawns a new galaxy
     if (event.isShiftDown())
     {
+        mouse_world_drag_origin = mouse_world_pos();
+        mouse_drag = true;
+        /*
         const vec3 mp = mouse_world_pos();
         const nbody::Vector pos = {mp.x, mp.y, mp.z};
         const nbody::Vector axis = {0,0,1};
         spawn_galaxy(pos, axis, target_num_elems);
+         */
+    }
+}
+
+void nbody::Demo::mouseUp(MouseEvent event)
+{
+    if (mouse_drag)
+    {
+        mouse_drag = false;
+        const vec3 pos0 = mouse_world_drag_origin;
+        const vec3 pos1 = mouse_world_pos();
+        const vec3 diff = pos1 - mouse_world_drag_origin;
+        const vec3 n = normalize(diff);
+        const nbody::Vector galaxy_axis = {n.x, n.y, n.z};
+        const nbody::Vector galaxy_vel = galaxy_axis * length(diff) * .00001f;
+        const nbody::Vector galaxy_pos = {pos0.x, pos0.y, pos0.z};
+        spawn_galaxy(target_num_elems, {.center=galaxy_pos, .axis=galaxy_axis, .vel=galaxy_vel});
     }
 }
 
@@ -381,16 +402,21 @@ void nbody::Demo::draw()
 {
     gl::clear(ColorA(0, 0, 0, 1), true);
 
-    gl::setMatrices(camera );
+    gl::setMatrices(camera);
 
+    if (mouse_drag)
     {
-        const vec3 mp = mouse_world_pos();
+        const vec3 pos0 = mouse_world_drag_origin;
+        const vec3 pos1 = mouse_world_pos();
         gl::color(1, .2, .2, .9);
-        gl::drawLine(vec3(0), vec3(mp.x, 0, 0));
+        gl::drawLine(vec3(0), vec3(pos1.x, 0, 0));
         gl::color(.2, 1, .2, .9);
-        gl::drawLine(vec3(mp.x, 0, 0), vec3(mp.x, mp.y, 0));
+        gl::drawLine(vec3(pos1.x, 0, 0), vec3(pos1.x, pos1.y, 0));
         gl::color(.4, .4, 1, .9);
-        gl::drawLine(vec3(mp.x, mp.y, 0), vec3(mp.x, mp.y, mp.z));
+        gl::drawLine(vec3(pos1.x, pos1.y, 0), pos1);
+
+        gl::color(1,1,0,1);
+        gl::drawLine(pos0, pos1);
     }
 
 
