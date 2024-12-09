@@ -21,4 +21,7 @@ target_link_libraries(nbody_demo PUBLIC cinder)
 set_target_properties(nbody_demo PROPERTIES WIN32_EXECUTABLE TRUE)
 set_target_properties(nbody_demo PROPERTIES LINKER_LANGUAGE CXX)
 target_compile_features(nbody_demo PRIVATE cxx_std_20)
-
+if (MSVC)
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_RELEASE} /MTd")
+endif()

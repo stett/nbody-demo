@@ -394,7 +394,7 @@ void nbody::Demo::mouseUp(MouseEvent event)
         const nbody::Vector galaxy_axis = {n.x, n.y, n.z};
         const nbody::Vector galaxy_vel = galaxy_axis * length(diff) * .00001f;
         const nbody::Vector galaxy_pos = {pos0.x, pos0.y, pos0.z};
-        spawn_galaxy(target_num_elems, {.center=galaxy_pos, .axis=galaxy_axis, .vel=galaxy_vel});
+        spawn_galaxy(target_num_elems, {.center=galaxy_pos, .vel=galaxy_vel, .axis=galaxy_axis });
     }
 }
 
