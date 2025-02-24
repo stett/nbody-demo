@@ -31,6 +31,7 @@ namespace nbody {
     private:
 
         void spawn_galaxy(uint32_t num, nbody::util::DiskArgs args);
+        void spawn_cube(uint32_t num, nbody::util::CubeArgs args);
         void setup_sim_data();
         void setup_acceleration_structure();
         void update_gpu_data();

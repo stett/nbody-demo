@@ -3,6 +3,9 @@ project(nbody_demo)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Use GPU acceleration
+#set(nbody_gpu ON)
+add_compile_definitions(NBODY_GPU=1)
 
 # Stop windows from stomping min and max functions with macros
 if (WIN32)

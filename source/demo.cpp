@@ -167,13 +167,30 @@ void nbody::Demo::spawn_galaxy(uint32_t num, nbody::util::DiskArgs args)
     nbody::util::disk(sim.bodies.end() - num, sim.bodies.end(), args);
 }
 
+void nbody::Demo::spawn_cube(uint32_t num, nbody::util::CubeArgs args)
+{
+    sim.bodies.resize(sim.bodies.size() + num);
+    nbody::util::cube(sim.bodies.end() - num, sim.bodies.end(), args);
+}
+
 void nbody::Demo::setup_sim_data()
 {
     // remove all bodies from the sim
     sim.bodies.clear();
 
+    // fill the void with evenly spaced stars
+    //spawn_cube(target_num_elems, { .size=sim.size });
+    //spawn_cube(target_num_elems, { .size=1000 });
+
+
     // add a disk galaxy at the origin
-    spawn_galaxy(target_num_elems, { .center={0,0,0}, .axis={0,0,1} });
+    spawn_galaxy(target_num_elems, { .center={0,0,0}, .axis={0,0,1}, .vel={0,0,0} });
+
+    //spawn_galaxy(target_num_elems, { .center={-250,0,0}, .axis={0,0,1}, .vel={0,40,0} });
+    //spawn_galaxy(target_num_elems, { .center={250,0,0},  .axis={0,1,0}, .vel={0,-40,0} });
+
+    //spawn_galaxy(target_num_elems, { .center={-500,0,0}, .axis={0,0,1}, .vel={0,0,0} });
+    //spawn_galaxy(target_num_elems, { .center={300,0,0}, .axis={0,1,0}, .vel={0,0,.001} });
 
     // this forces an update to the acceleration structure, which is
     // needed if we want to update the structure rendering
@@ -280,6 +297,9 @@ void nbody::Demo::update()
         if (ImGui::SliderFloat("sim t-scale", &sim_dt_scale, .0f, 1.f)) { }
         if (ImGui::Button("tick simulation")) { one_tick = true; }
         if (ImGui::Button("reset simulation")) { setup_sim_data(); }
+#if NBODY_GPU
+        if (ImGui::Checkbox("gpu acceleration", &sim.use_gpu)) { }
+#endif
         if (ImGui::Checkbox("show gravity tree", &draw_bh_bounds)) { }
         if (ImGui::Checkbox("show coordinate axes", &draw_axes)) { }
 
