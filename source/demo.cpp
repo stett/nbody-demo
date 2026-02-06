@@ -11,13 +11,15 @@ void nbody::Demo::setup()
 {
     ImGui::Initialize();
 
+    /*
     {
         // For high-dpi displays
         const float content_scale = getDisplay()->getContentScale();
         ImGuiIO &io = ImGui::GetIO();
-        io.DisplayFramebufferScale.x *= content_scale;
-        io.DisplayFramebufferScale.y *= content_scale;
+        io.DisplayFramebufferScale.x = content_scale;
+        io.DisplayFramebufferScale.y = content_scale;
     }
+    */
 
     setWindowSize(1024, 1024);
 

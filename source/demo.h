@@ -1,4 +1,5 @@
 #pragma once
+#define GLM_ENABLE_EXPERIMENTAL
 #include "cinder/app/App.h"
 #include "cinder/gl/gl.h"
 #include "nbody/sim.h"
