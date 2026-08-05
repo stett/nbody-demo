@@ -1,5 +1,6 @@
 ./cmake-build*/*
 cmake-build*
+claude-build-debug/
 .idea/*
 .DS_Store
 */.DS_Store

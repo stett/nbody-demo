@@ -64,6 +64,7 @@ namespace nbody {
         VboRef vbo_bounds;
 
         // settings
+        bool setup_complete = false;
         bool run_simulation = false;
         bool draw_bh_bounds = false;
         bool draw_axes = false;

@@ -159,6 +159,8 @@ void nbody::Demo::setup()
 
     gl::enableDepthWrite();
     gl::enableDepthRead();
+
+    setup_complete = true;
 }
 
 void nbody::Demo::spawn_galaxy(uint32_t num, nbody::util::DiskArgs args)
@@ -282,6 +284,11 @@ void nbody::Demo::resize()
 
 void nbody::Demo::update()
 {
+    // setWindowSize() in setup() dispatches a resize synchronously on some backends,
+    // which drives update()/draw() before the shaders and VBOs below exist.
+    if (! setup_complete)
+        return;
+
     bool one_tick = false;
 
     // Update gui
@@ -420,6 +427,9 @@ void nbody::Demo::mouseUp(MouseEvent event)
 
 void nbody::Demo::draw()
 {
+    if (! setup_complete)
+        return;
+
     gl::clear(ColorA(0, 0, 0, 1), true);
 
     gl::setMatrices(camera);
