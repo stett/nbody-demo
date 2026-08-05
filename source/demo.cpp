@@ -2,22 +2,17 @@
 #include <cmath>
 #include <random>
 #include "cinder/CinderImGui.h"
-#include "cinder/Display.h"
 
 using namespace ci;
 using namespace ci::gl;
 
 void nbody::Demo::setup()
 {
+    // Cinder already reports io.DisplaySize in pixels via toPixels(), so DisplayFramebufferScale has
+    // to stay at 1. Scaling it by the display's content scale made imgui's GL backend size its
+    // framebuffer at DisplaySize * 2, and it derives scissor rects from that height -- so every clip
+    // rect landed above the real 1024px framebuffer and the whole UI was scissored away.
     ImGui::Initialize();
-
-    {
-        // For high-dpi displays
-        const float content_scale = getDisplay()->getContentScale();
-        ImGuiIO &io = ImGui::GetIO();
-        io.DisplayFramebufferScale.x *= content_scale;
-        io.DisplayFramebufferScale.y *= content_scale;
-    }
 
     setWindowSize(1024, 1024);
 
@@ -278,6 +273,15 @@ void nbody::Demo::update_selected_body()
 
 void nbody::Demo::resize()
 {
+    // Cinder derives the viewport from glfwGetFramebufferSize() in RendererImplGlfwGl::defaultResize().
+    // During startup on macOS that can report the window as still retina-backed, before GLFW settles
+    // the NSView for a non-high-density app, so a 1024pt window bakes in a 2048px viewport and nothing
+    // re-runs the query afterwards. That put the scene's center in the top-right corner until the first
+    // manual resize. Set the viewport from the window size ourselves, which is authoritative here
+    // because getContentScale() is 1 while high-density display is disabled.
+    const ivec2 size_px = ci::app::toPixels(getWindowSize());
+    gl::viewport(0, 0, size_px.x, size_px.y);
+
     camera.setPerspective(60, getWindowAspectRatio(), 1, 1e5 );
     gl::setMatrices(camera );
 }
