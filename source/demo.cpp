@@ -11,6 +11,10 @@ void nbody::Demo::setup()
 {
     ImGui::Initialize();
 
+    // Prefer the GPU when one is usable. Best effort: a false return just leaves the
+    // sim on its default CPU variant, and the combo shows why.
+    sim.set_variant(nbody::Variant::GpuBarnesHut);
+
     /*
     {
         // For high-dpi displays
@@ -275,6 +279,45 @@ void nbody::Demo::update()
         if (ImGui::SliderFloat("sim t-scale", &sim_dt_scale, .0f, 1.f)) { }
         if (ImGui::Button("tick simulation")) { one_tick = true; }
         if (ImGui::Button("reset simulation")) { setup_sim_data(); }
+
+        // simulation variant
+        {
+            const nbody::VariantInfo& current = nbody::Sim::info(sim.variant());
+            if (ImGui::BeginCombo("variant", current.name))
+            {
+                for (const nbody::VariantInfo& info : nbody::Sim::variants())
+                {
+                    // Latch this before the push. `info` refers into the live variant
+                    // table, and a failed switch below marks that same entry
+                    // unavailable, so re-reading info.available for the pop would
+                    // underflow the style stack.
+                    const bool greyed = !info.available;
+
+                    // Grey out unavailable entries by hand rather than with
+                    // BeginDisabled, which the ImGui bundled with Cinder predates. They
+                    // stay clickable on purpose: set_variant refuses safely and reports
+                    // why, so clicking a greyed entry explains itself.
+                    if (greyed)
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(.5f, .5f, .5f, 1.f));
+
+                    if (ImGui::Selectable(info.name, info.variant == sim.variant()))
+                        variant_error = sim.set_variant(info.variant) ? std::string{} : sim.last_error();
+
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", greyed ? info.unavailable_reason.c_str() : info.description);
+
+                    if (greyed)
+                        ImGui::PopStyleColor();
+                }
+                ImGui::EndCombo();
+            }
+            if (!variant_error.empty())
+                ImGui::TextColored(ImVec4(1.f, .4f, .4f, 1.f), "%s", variant_error.c_str());
+        }
+
+        bool wrap_space = sim.wrap();
+        if (ImGui::Checkbox("wrap space", &wrap_space)) { sim.set_wrap(wrap_space); }
+
         if (ImGui::Checkbox("show gravity tree", &draw_bh_bounds)) { }
         if (ImGui::Checkbox("show coordinate axes", &draw_axes)) { }
 

@@ -1,5 +1,6 @@
 #pragma once
 #define GLM_ENABLE_EXPERIMENTAL
+#include <string>
 #include "cinder/app/App.h"
 #include "cinder/gl/gl.h"
 #include "nbody/sim.h"
@@ -66,6 +67,9 @@ namespace nbody {
         bool draw_bh_bounds = false;
         bool draw_axes = false;
         size_t target_num_elems = 4096;
+
+        // why the last variant switch failed; empty when it succeeded
+        std::string variant_error;
 
         // camera
         CameraPersp camera;
