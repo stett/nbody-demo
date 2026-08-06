@@ -156,8 +156,8 @@ void nbody::Demo::setup()
     setup_sim_data();
 
     // Create and populate VBOs containing particle and bounds data
-    vbo_particles = gl::Vbo::create(GL_ARRAY_BUFFER, sim.bodies.size() * 3, nullptr, GL_DYNAMIC_DRAW);
-    vbo_bounds = gl::Vbo::create(GL_ARRAY_BUFFER, sim.acc_tree.nodes().size() * 7, nullptr, GL_DYNAMIC_DRAW);
+    vbo_particles = gl::Vbo::create(GL_ARRAY_BUFFER, sim.bodies().size() * 3, nullptr, GL_DYNAMIC_DRAW);
+    vbo_bounds = gl::Vbo::create(GL_ARRAY_BUFFER, sim.nodes().size() * 7, nullptr, GL_DYNAMIC_DRAW);
     update_gpu_data();
 
     gl::enableDepthWrite();
@@ -166,14 +166,15 @@ void nbody::Demo::setup()
 
 void nbody::Demo::spawn_galaxy(uint32_t num, nbody::util::DiskArgs args)
 {
-    sim.bodies.resize(sim.bodies.size() + num);
-    nbody::util::disk(sim.bodies.end() - num, sim.bodies.end(), args);
+    std::vector<nbody::Body>& bodies = sim.mutable_bodies();
+    bodies.resize(bodies.size() + num);
+    nbody::util::disk(bodies.end() - num, bodies.end(), args);
 }
 
 void nbody::Demo::setup_sim_data()
 {
     // remove all bodies from the sim
-    sim.bodies.clear();
+    sim.mutable_bodies().clear();
 
     // add a disk galaxy at the origin
     spawn_galaxy(target_num_elems, { .center={0,0,0}, .axis={0,0,1} });
@@ -185,11 +186,13 @@ void nbody::Demo::setup_sim_data()
 
 void nbody::Demo::update_gpu_data()
 {
-    // Update the CPU buffer for particle data
-    gpu_particle_data.resize(sim.bodies.size() * 8);
-    for (size_t i = 0; i < sim.bodies.size(); i++)
+    // Update the CPU buffer for particle data. Read-only: bind const so this per-frame
+    // loop never takes mutable access.
+    const std::vector<nbody::Body>& bodies = sim.bodies();
+    gpu_particle_data.resize(bodies.size() * 8);
+    for (size_t i = 0; i < bodies.size(); i++)
     {
-        nbody::Body& body = sim.bodies[i];
+        const nbody::Body& body = bodies[i];
         gpu_particle_data[(i * 4) + 0] = (body.pos.x);
         gpu_particle_data[(i * 4) + 1] = (body.pos.y);
         gpu_particle_data[(i * 4) + 2] = (body.pos.z);
@@ -199,17 +202,19 @@ void nbody::Demo::update_gpu_data()
     // Update the GPU buffer
     vbo_particles->bufferData(gpu_particle_data.size() * sizeof(float), gpu_particle_data.data(), GL_DYNAMIC_DRAW);
 
-    if (draw_bh_bounds)
+    // not every simulation variant builds a tree, so tolerate there being none
+    const nbody::bh::Tree* bh_tree = sim.tree();
+    if (draw_bh_bounds && bh_tree)
     {
         // Update the CPU buffer for tree data
         // Create and populate VBO containing bounds data
-        const size_t num_nodes = sim.acc_tree.nodes().size();
+        const size_t num_nodes = bh_tree->nodes().size();
         gpu_bounds_data.clear();
         gpu_bounds_data.reserve(7 * num_nodes);
         float max_potential = 0;
         float avg_potential = 0;
         const float num_nodes_inv = 1.f / float(num_nodes);
-        for (const nbody::bh::Node& node : sim.acc_tree.nodes())
+        for (const nbody::bh::Node& node : bh_tree->nodes())
         {
             const vec3 half = vec3(node.bounds.size * .5f);
             const vec3 bounds_center = vec3(node.bounds.center.x, node.bounds.center.y, node.bounds.center.z);
@@ -221,7 +226,7 @@ void nbody::Demo::update_gpu_data()
             // get gravitational potential at the center of this node and store it in GPU data
             const nbody::Vector& center = node.bounds.center;
             float potential = 0;
-            sim.acc_tree.apply(center, [&potential, &center](const nbody::bh::Node& node) {
+            bh_tree->apply(center, [&potential, &center](const nbody::bh::Node& node) {
                 const vec3 delta = vec3(node.com.x, node.com.y, node.com.z) - vec3(center.x, center.y, center.z);
                 potential += node.mass / dot(delta, delta);
             });
@@ -255,7 +260,7 @@ void nbody::Demo::update_selected_body()
             return true;
 
         // if this node is a child, test against the element in the node
-        sim.bodies[node.]
+        sim.bodies()[node.]
     });
      */
 }
@@ -275,8 +280,17 @@ void nbody::Demo::update()
         ImGui::Begin("Settings");
         int app_hz = int(floor(1.f / delta_time));
         ImGui::Text("framerate: %dhz", app_hz);
-        const int bhtree_percent = int(100.f * float(sim.acc_tree.nodes().size()) / float(sim.acc_tree.nodes().capacity()));
-        ImGui::Text("node capacity: %d (%d%%)", (int)sim.acc_tree.nodes().size(), bhtree_percent);
+        if (const nbody::bh::Tree* t = sim.tree())
+        {
+            const size_t used = t->nodes().size();
+            const size_t cap = t->nodes().capacity();
+            const int bhtree_percent = cap ? int(100.f * float(used) / float(cap)) : 0;
+            ImGui::Text("node capacity: %d (%d%%)", (int)used, bhtree_percent);
+        }
+        else
+        {
+            ImGui::Text("node capacity: n/a");
+        }
         ImGui::Checkbox("run simulation", &run_simulation);
         int sim_hz = int(ceil(1.f / sim_dt));
         if (ImGui::SliderInt("sim hz", &sim_hz, 1.f, 120.f)) { sim_dt = 1.f / float(sim_hz); }
@@ -434,7 +448,7 @@ void nbody::Demo::draw()
         gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), (void*)(0*sizeof(float)));
         gl::vertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), (void*)(3*sizeof(float)));
         gl::vertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 7*sizeof(float), (void*)(6*sizeof(float)));
-        gl::drawArrays(GL_POINTS, 0, (GLsizei)sim.acc_tree.nodes().size());
+        gl::drawArrays(GL_POINTS, 0, (GLsizei)sim.nodes().size());
         vbo_bounds->unbind();
         gl::setDefaultShaderVars();
     }
@@ -442,11 +456,11 @@ void nbody::Demo::draw()
     if (draw_axes)
     {
         gl::color(1, .2, .2, .5);
-        gl::drawLine(vec3(-sim.size, 0, 0), vec3(sim.size, 0, 0));
+        gl::drawLine(vec3(-sim.size(), 0, 0), vec3(sim.size(), 0, 0));
         gl::color(.2, 1, .2, .5);
-        gl::drawLine(vec3(0, -sim.size, 0), vec3(0, sim.size, 0));
+        gl::drawLine(vec3(0, -sim.size(), 0), vec3(0, sim.size(), 0));
         gl::color(.2, .2, 1, .5);
-        gl::drawLine(vec3(0, 0, -sim.size), vec3(0, 0, sim.size));
+        gl::drawLine(vec3(0, 0, -sim.size()), vec3(0, 0, sim.size()));
     }
 
     {
@@ -456,7 +470,7 @@ void nbody::Demo::draw()
         gl::enableVertexAttribArray(1);
         gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 4*sizeof(float), nullptr);
         gl::vertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(3*sizeof(float)));
-        gl::drawArrays(GL_POINTS, 0, (GLsizei) sim.bodies.size());
+        gl::drawArrays(GL_POINTS, 0, (GLsizei) sim.bodies().size());
         vbo_particles->unbind();
         gl::setDefaultShaderVars();
     }
@@ -464,10 +478,10 @@ void nbody::Demo::draw()
     /*
     if (draw_selection)
     {
-        if (0 <= selected_elem && selected_elem < sim.bodies.size())
+        if (0 <= selected_elem && selected_elem < sim.bodies().size())
         {
             gl::color(1, 0, 0, 1);
-            const nbody::Vector& nbpos = sim.bodies[selected_elem].pos;
+            const nbody::Vector& nbpos = sim.bodies()[selected_elem].pos;
             const vec3 pos = vec3(nbpos.x, nbpos.y, nbpos.z);
             gl::drawSphere(pos, particle_radius * 2);
 
@@ -509,8 +523,8 @@ void nbody::Demo::draw()
         {
             const uint32_t i0 = sim.sbvhtree.intersections[i].first;
             const uint32_t i1 = sim.sbvhtree.intersections[i].second;
-            const nbody::Body& body0 = sim.bodies[i0];
-            const nbody::Body& body1 = sim.bodies[i1];
+            const nbody::Body& body0 = sim.bodies()[i0];
+            const nbody::Body& body1 = sim.bodies()[i1];
             gl::drawLine(body0.pos, body1.pos);
         }
     }
