@@ -1,8 +1,19 @@
 cmake_minimum_required(VERSION 3.24)
+
+# Cinder's platform_macosx.cmake force-sets CMAKE_OSX_ARCHITECTURES to "arm64;x86_64"
+# when it is empty. That happens partway through add_subdirectory(external), so nbody's
+# targets are created single-arch and nbody_demo's are created universal -- the link then
+# fails with undefined x86_64 symbols. Settle the architecture up front so every target
+# in the tree agrees. Must precede project() to apply to compiler detection.
+# CMAKE_HOST_SYSTEM_PROCESSOR is still empty this early, so query the host directly.
+if (APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+    cmake_host_system_information(RESULT host_arch QUERY OS_PLATFORM)
+    set(CMAKE_OSX_ARCHITECTURES "${host_arch}" CACHE STRING "macOS architectures")
+endif()
+
 project(nbody_demo)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
 
 # Stop windows from stomping min and max functions with macros
 if (WIN32)

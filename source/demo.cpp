@@ -2,28 +2,21 @@
 #include <cmath>
 #include <random>
 #include "cinder/CinderImGui.h"
-#include "cinder/Display.h"
 
 using namespace ci;
 using namespace ci::gl;
 
 void nbody::Demo::setup()
 {
+    // Cinder already reports io.DisplaySize in pixels via toPixels(), so DisplayFramebufferScale has
+    // to stay at 1. Scaling it by the display's content scale made imgui's GL backend size its
+    // framebuffer at DisplaySize * 2, and it derives scissor rects from that height -- so every clip
+    // rect landed above the real 1024px framebuffer and the whole UI was scissored away.
     ImGui::Initialize();
 
     // Prefer the GPU when one is usable. Best effort: a false return just leaves the
     // sim on its default CPU variant, and the combo shows why.
     sim.set_variant(nbody::Variant::GpuBarnesHut);
-
-    /*
-    {
-        // For high-dpi displays
-        const float content_scale = getDisplay()->getContentScale();
-        ImGuiIO &io = ImGui::GetIO();
-        io.DisplayFramebufferScale.x = content_scale;
-        io.DisplayFramebufferScale.y = content_scale;
-    }
-    */
 
     setWindowSize(1024, 1024);
 
@@ -165,6 +158,8 @@ void nbody::Demo::setup()
 
     gl::enableDepthWrite();
     gl::enableDepthRead();
+
+    setup_complete = true;
 }
 
 void nbody::Demo::spawn_galaxy(uint32_t num, nbody::util::DiskArgs args)
@@ -174,13 +169,32 @@ void nbody::Demo::spawn_galaxy(uint32_t num, nbody::util::DiskArgs args)
     nbody::util::disk(bodies.end() - num, bodies.end(), args);
 }
 
+void nbody::Demo::spawn_cube(uint32_t num, nbody::util::CubeArgs args)
+{
+    std::vector<nbody::Body>& bodies = sim.mutable_bodies();
+    bodies.resize(bodies.size() + num);
+    nbody::util::cube(bodies.end() - num, bodies.end(), args);
+}
+
 void nbody::Demo::setup_sim_data()
 {
     // remove all bodies from the sim
     sim.mutable_bodies().clear();
 
+    // fill the void with evenly spaced stars
+    //spawn_cube(target_num_elems, { .size=sim.size });
+    //spawn_cube(target_num_elems, { .size=1000 });
+
+
     // add a disk galaxy at the origin
-    spawn_galaxy(target_num_elems, { .center={0,0,0}, .axis={0,0,1} });
+    // designators must follow DiskArgs' member order (center, vel, axis)
+    spawn_galaxy(target_num_elems, { .center={0,0,0}, .vel={0,0,0}, .axis={0,0,1} });
+
+    //spawn_galaxy(target_num_elems, { .center={-250,0,0}, .axis={0,0,1}, .vel={0,40,0} });
+    //spawn_galaxy(target_num_elems, { .center={250,0,0},  .axis={0,1,0}, .vel={0,-40,0} });
+
+    //spawn_galaxy(target_num_elems, { .center={-500,0,0}, .axis={0,0,1}, .vel={0,0,0} });
+    //spawn_galaxy(target_num_elems, { .center={300,0,0}, .axis={0,1,0}, .vel={0,0,.001} });
 
     // this forces an update to the acceleration structure, which is
     // needed if we want to update the structure rendering
@@ -249,12 +263,26 @@ void nbody::Demo::update_gpu_data()
 
 void nbody::Demo::resize()
 {
+    // Cinder derives the viewport from glfwGetFramebufferSize() in RendererImplGlfwGl::defaultResize().
+    // During startup on macOS that can report the window as still retina-backed, before GLFW settles
+    // the NSView for a non-high-density app, so a 1024pt window bakes in a 2048px viewport and nothing
+    // re-runs the query afterwards. That put the scene's center in the top-right corner until the first
+    // manual resize. Set the viewport from the window size ourselves, which is authoritative here
+    // because getContentScale() is 1 while high-density display is disabled.
+    const ivec2 size_px = ci::app::toPixels(getWindowSize());
+    gl::viewport(0, 0, size_px.x, size_px.y);
+
     camera.setPerspective(60, getWindowAspectRatio(), 1, 1e5 );
     gl::setMatrices(camera );
 }
 
 void nbody::Demo::update()
 {
+    // setWindowSize() in setup() dispatches a resize synchronously on some backends,
+    // which drives update()/draw() before the shaders and VBOs below exist.
+    if (! setup_complete)
+        return;
+
     bool one_tick = false;
 
     // Update gui
@@ -432,6 +460,9 @@ void nbody::Demo::mouseUp(MouseEvent event)
 
 void nbody::Demo::draw()
 {
+    if (! setup_complete)
+        return;
+
     gl::clear(ColorA(0, 0, 0, 1), true);
 
     gl::setMatrices(camera);

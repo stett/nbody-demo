@@ -33,6 +33,7 @@ namespace nbody {
     private:
 
         void spawn_galaxy(uint32_t num, nbody::util::DiskArgs args);
+        void spawn_cube(uint32_t num, nbody::util::CubeArgs args);
         void setup_sim_data();
         void update_gpu_data();
 
@@ -63,6 +64,7 @@ namespace nbody {
         VboRef vbo_bounds;
 
         // settings
+        bool setup_complete = false;
         bool run_simulation = false;
         bool draw_bh_bounds = false;
         bool draw_axes = false;
