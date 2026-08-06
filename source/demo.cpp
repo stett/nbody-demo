@@ -234,7 +234,6 @@ void nbody::Demo::update_gpu_data()
             avg_potential += potential * num_nodes_inv;
             gpu_bounds_data.emplace_back(potential);
         }
-        const float max_potential_inv = max_potential > std::numeric_limits<float>::epsilon() ? 1.f / max_potential : 0;
         const float avg_potential_inv = avg_potential > std::numeric_limits<float>::epsilon() ? 1.f / avg_potential : 0;
         for (size_t i = 0; i < gpu_bounds_data.size(); i += 7)
         {
@@ -243,26 +242,6 @@ void nbody::Demo::update_gpu_data()
         }
         vbo_bounds->bufferData(gpu_bounds_data.size() * sizeof(float), gpu_bounds_data.data(), GL_DYNAMIC_DRAW);
     }
-}
-
-void nbody::Demo::update_selected_body()
-{
-    /*
-    vec3 glm_ray_origin;
-    vec3 glm_ray_direction;
-    mouse_ray(glm_ray_origin, glm_ray_direction);
-    const bh3::Vector ray_origin = { glm_ray_origin.x, glm_ray_origin.y, glm_ray_origin.z };
-    const bh3::Vector ray_direction = { glm_ray_direction.x, glm_ray_direction.y, glm_ray_direction.z };
-    sim.bhtree.ray_query(ray_origin, ray_direction, [this](const bh3::Node& node)
-    {
-        // if this node has children, keep digging
-        if (node.children > 0)
-            return true;
-
-        // if this node is a child, test against the element in the node
-        sim.bodies()[node.]
-    });
-     */
 }
 
 void nbody::Demo::resize()
@@ -390,12 +369,6 @@ void nbody::Demo::mouseDown(MouseEvent event)
     {
         mouse_world_drag_origin = mouse_world_pos();
         mouse_drag = true;
-        /*
-        const vec3 mp = mouse_world_pos();
-        const nbody::Vector pos = {mp.x, mp.y, mp.z};
-        const nbody::Vector axis = {0,0,1};
-        spawn_galaxy(pos, axis, target_num_elems);
-         */
     }
 }
 
@@ -475,60 +448,6 @@ void nbody::Demo::draw()
         gl::setDefaultShaderVars();
     }
 
-    /*
-    if (draw_selection)
-    {
-        if (0 <= selected_elem && selected_elem < sim.bodies().size())
-        {
-            gl::color(1, 0, 0, 1);
-            const nbody::Vector& nbpos = sim.bodies()[selected_elem].pos;
-            const vec3 pos = vec3(nbpos.x, nbpos.y, nbpos.z);
-            gl::drawSphere(pos, particle_radius * 2);
-
-            size_t num_interactions = 0;
-            sim.acc_tree.apply({ pos.x, pos.y, pos.z }, [&](const nbody::bh::Node& node)
-			{
-				++num_interactions;
-
-                // select a color based on tree depth
-				const float percent = 1.f - (node.bounds.size / sim.bhtree.bounds().size);
-				const float a = percent * percent;
-				gl::color(1 - a * .5, a, 0, .25 + .75 * a);
-
-                // draw line from selected element to this node's com
-                const vec3& com = vec3(node.com.x, node.com.y, node.com.z);
-				gl::drawLine(pos, com);
-
-                // if this node doesn't have children, outline it and draw crosshairs
-                // at the center of mass.
-                if (node.children != 0)
-                {
-                    const float bounds_size = node.bounds.size;
-                    const bh3::Vector bounds_center = node.bounds.center;
-                    gl::drawStrokedCube(vec3(bounds_center.x, bounds_center.y, bounds_center.z), vec3(bounds_size));
-                    gl::drawLine(com - vec3(bounds_size * .25, 0, 0), com + vec3(bounds_size * .25, 0, 0));
-                    gl::drawLine(com - vec3(0, bounds_size * .25, 0), com + vec3(0, bounds_size * .25, 0));
-                    gl::drawLine(com - vec3(0, 0, bounds_size * .25), com + vec3(0, 0, bounds_size * .25));
-                }
-			});
-        }
-    }
-     */
-
-    /*
-    if (draw_collisions)
-    {
-        gl::color(1,0,0,1);
-        for (uint32_t i = 0; i < sim.sbvhtree.num_intersections; ++i)
-        {
-            const uint32_t i0 = sim.sbvhtree.intersections[i].first;
-            const uint32_t i1 = sim.sbvhtree.intersections[i].second;
-            const nbody::Body& body0 = sim.bodies()[i0];
-            const nbody::Body& body1 = sim.bodies()[i1];
-            gl::drawLine(body0.pos, body1.pos);
-        }
-    }
-     */
 }
 
 vec3 nbody::Demo::homogeneous_to_world(const vec3& homo) const

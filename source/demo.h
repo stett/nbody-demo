@@ -33,9 +33,7 @@ namespace nbody {
 
         void spawn_galaxy(uint32_t num, nbody::util::DiskArgs args);
         void setup_sim_data();
-        void setup_acceleration_structure();
         void update_gpu_data();
-        void update_selected_body();
 
         // helpers
         vec3 homogeneous_to_world(const vec3& homo) const;
@@ -67,9 +65,6 @@ namespace nbody {
         bool run_simulation = false;
         bool draw_bh_bounds = false;
         bool draw_axes = false;
-        bool draw_selection = false;
-        bool draw_collisions = false;
-        int32_t selected_elem = 0;
         size_t target_num_elems = 4096;
 
         // camera
