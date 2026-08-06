@@ -10,7 +10,6 @@ using namespace ci::gl;
 void nbody::Demo::setup()
 {
     ImGui::Initialize();
-    sim.init_gpu();
 
     /*
     {
