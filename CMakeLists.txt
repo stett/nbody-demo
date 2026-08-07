@@ -20,6 +20,12 @@ if (WIN32)
     add_compile_definitions(NOMINMAX)
 endif()
 
+# Use the dynamic CRT. Cinder's platform_msw.cmake defaults a static (non-shared) build to
+# /MT, which would not match what everything else here compiles as, so set it explicitly.
+# It only defaults when this is undefined, so setting it before add_subdirectory() wins.
+# Must precede add_subdirectory(external) to apply to cinder's own targets.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
+
 # add dependencies
 add_subdirectory(external)
 
@@ -33,6 +39,7 @@ set_target_properties(nbody_demo PROPERTIES WIN32_EXECUTABLE TRUE)
 set_target_properties(nbody_demo PROPERTIES LINKER_LANGUAGE CXX)
 target_compile_features(nbody_demo PRIVATE cxx_std_20)
 if (MSVC)
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MD")
+    # runtime library is selected via CMAKE_MSVC_RUNTIME_LIBRARY above, not by hand-appending
+    # /MD here: that only covered Release and left Debug to whatever cinder had already set.
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /ZI")
 endif()
