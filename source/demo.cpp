@@ -263,14 +263,23 @@ void nbody::Demo::update_gpu_data()
 
 void nbody::Demo::resize()
 {
+#if ! defined(CINDER_MSW)
     // Cinder derives the viewport from glfwGetFramebufferSize() in RendererImplGlfwGl::defaultResize().
     // During startup on macOS that can report the window as still retina-backed, before GLFW settles
     // the NSView for a non-high-density app, so a 1024pt window bakes in a 2048px viewport and nothing
     // re-runs the query afterwards. That put the scene's center in the top-right corner until the first
-    // manual resize. Set the viewport from the window size ourselves, which is authoritative here
-    // because getContentScale() is 1 while high-density display is disabled.
+    // manual resize. Set the viewport from the window size ourselves.
+    //
+    // Not on MSW. setWindowSize() in setup() dispatches resize() synchronously, and Cinder's
+    // WindowImplMsw has its size available before its display is: getSize() is already correct
+    // while getContentScale() still reads uninitialised state. toPixels() multiplies the two, so
+    // it returns nonsense -- a large negative width is typical -- and the same toPixels() path
+    // feeds imgui's DisplaySize from Cinder's NewFrameGuard, so the next NewFrame() trips
+    // "Invalid DisplaySize value!" and aborts. That killed better than half of all launches.
+    // The MSW renderer sets the viewport correctly on its own, so there is nothing to override.
     const ivec2 size_px = ci::app::toPixels(getWindowSize());
     gl::viewport(0, 0, size_px.x, size_px.y);
+#endif
 
     camera.setPerspective(60, getWindowAspectRatio(), 1, 1e5 );
     gl::setMatrices(camera );
