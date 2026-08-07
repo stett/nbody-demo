@@ -57,7 +57,12 @@ namespace nbody {
         GlslProgRef bounds_shader;
         GlslProgRef particle_shader;
 
-        // gpu data caches
+        // gpu data caches. the per-element float counts must match the vertex attribute
+        // layouts set up in setup(), and are what the draw calls derive their vertex
+        // counts from -- deriving those from the sim instead would draw bodies that have
+        // not been uploaded yet, since bodies can be spawned from an input handler.
+        static constexpr size_t floats_per_particle = 4;   // pos.xyz, radius
+        static constexpr size_t floats_per_bound = 7;      // min.xyz, max.xyz, potential
         std::vector<float> gpu_particle_data;
         VboRef vbo_particles;
         std::vector<float> gpu_bounds_data;

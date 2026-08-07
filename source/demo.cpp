@@ -152,8 +152,10 @@ void nbody::Demo::setup()
     setup_sim_data();
 
     // Create and populate VBOs containing particle and bounds data
-    vbo_particles = gl::Vbo::create(GL_ARRAY_BUFFER, sim.bodies().size() * 3, nullptr, GL_DYNAMIC_DRAW);
-    vbo_bounds = gl::Vbo::create(GL_ARRAY_BUFFER, sim.nodes().size() * 7, nullptr, GL_DYNAMIC_DRAW);
+    vbo_particles = gl::Vbo::create(GL_ARRAY_BUFFER,
+        sim.bodies().size() * floats_per_particle * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    vbo_bounds = gl::Vbo::create(GL_ARRAY_BUFFER,
+        sim.nodes().size() * floats_per_bound * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
     update_gpu_data();
 
     gl::enableDepthWrite();
@@ -206,14 +208,14 @@ void nbody::Demo::update_gpu_data()
     // Update the CPU buffer for particle data. Read-only: bind const so this per-frame
     // loop never takes mutable access.
     const std::vector<nbody::Body>& bodies = sim.bodies();
-    gpu_particle_data.resize(bodies.size() * 8);
+    gpu_particle_data.resize(bodies.size() * floats_per_particle);
     for (size_t i = 0; i < bodies.size(); i++)
     {
         const nbody::Body& body = bodies[i];
-        gpu_particle_data[(i * 4) + 0] = (body.pos.x);
-        gpu_particle_data[(i * 4) + 1] = (body.pos.y);
-        gpu_particle_data[(i * 4) + 2] = (body.pos.z);
-        gpu_particle_data[(i * 4) + 3] = (body.radius);
+        gpu_particle_data[(i * floats_per_particle) + 0] = (body.pos.x);
+        gpu_particle_data[(i * floats_per_particle) + 1] = (body.pos.y);
+        gpu_particle_data[(i * floats_per_particle) + 2] = (body.pos.z);
+        gpu_particle_data[(i * floats_per_particle) + 3] = (body.radius);
     }
 
     // Update the GPU buffer
@@ -227,7 +229,7 @@ void nbody::Demo::update_gpu_data()
         // Create and populate VBO containing bounds data
         const size_t num_nodes = bh_tree->nodes().size();
         gpu_bounds_data.clear();
-        gpu_bounds_data.reserve(7 * num_nodes);
+        gpu_bounds_data.reserve(floats_per_bound * num_nodes);
         float max_potential = 0;
         float avg_potential = 0;
         const float num_nodes_inv = 1.f / float(num_nodes);
@@ -252,12 +254,18 @@ void nbody::Demo::update_gpu_data()
             gpu_bounds_data.emplace_back(potential);
         }
         const float avg_potential_inv = avg_potential > std::numeric_limits<float>::epsilon() ? 1.f / avg_potential : 0;
-        for (size_t i = 0; i < gpu_bounds_data.size(); i += 7)
+        for (size_t i = 0; i < gpu_bounds_data.size(); i += floats_per_bound)
         {
             float& potential = gpu_bounds_data[i+6];
             potential = std::min(1.f, potential * avg_potential_inv);
         }
         vbo_bounds->bufferData(gpu_bounds_data.size() * sizeof(float), gpu_bounds_data.data(), GL_DYNAMIC_DRAW);
+    }
+    else
+    {
+        // draw() derives its vertex count from this buffer, so it has to be emptied rather
+        // than left holding the last tree a variant happened to build.
+        gpu_bounds_data.clear();
     }
 }
 
@@ -338,7 +346,22 @@ void nbody::Demo::update()
                         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(.5f, .5f, .5f, 1.f));
 
                     if (ImGui::Selectable(info.name, info.variant == sim.variant()))
-                        variant_error = sim.set_variant(info.variant) ? std::string{} : sim.last_error();
+                    {
+                        if (sim.set_variant(info.variant))
+                        {
+                            variant_error.clear();
+
+                            // The incoming solver adopts the bodies but not an acceleration
+                            // structure, so build one now. Without this the tree wireframe
+                            // and the node-capacity readout stay empty until the next step,
+                            // which never comes while the simulation is paused.
+                            sim.accelerate();
+                        }
+                        else
+                        {
+                            variant_error = sim.last_error();
+                        }
+                    }
 
                     if (ImGui::IsItemHovered())
                         ImGui::SetTooltip("%s", greyed ? info.unavailable_reason.c_str() : info.description);
@@ -500,10 +523,10 @@ void nbody::Demo::draw()
         gl::enableVertexAttribArray(0);
         gl::enableVertexAttribArray(1);
         gl::enableVertexAttribArray(2);
-        gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), (void*)(0*sizeof(float)));
-        gl::vertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), (void*)(3*sizeof(float)));
-        gl::vertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 7*sizeof(float), (void*)(6*sizeof(float)));
-        gl::drawArrays(GL_POINTS, 0, (GLsizei)sim.nodes().size());
+        gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, floats_per_bound*sizeof(float), (void*)(0*sizeof(float)));
+        gl::vertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, floats_per_bound*sizeof(float), (void*)(3*sizeof(float)));
+        gl::vertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, floats_per_bound*sizeof(float), (void*)(6*sizeof(float)));
+        gl::drawArrays(GL_POINTS, 0, (GLsizei)(gpu_bounds_data.size() / floats_per_bound));
         vbo_bounds->unbind();
         gl::setDefaultShaderVars();
     }
@@ -523,9 +546,9 @@ void nbody::Demo::draw()
         vbo_particles->bind();
         gl::enableVertexAttribArray(0);
         gl::enableVertexAttribArray(1);
-        gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 4*sizeof(float), nullptr);
-        gl::vertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(3*sizeof(float)));
-        gl::drawArrays(GL_POINTS, 0, (GLsizei) sim.bodies().size());
+        gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, floats_per_particle*sizeof(float), nullptr);
+        gl::vertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, floats_per_particle*sizeof(float), (void*)(3*sizeof(float)));
+        gl::drawArrays(GL_POINTS, 0, (GLsizei)(gpu_particle_data.size() / floats_per_particle));
         vbo_particles->unbind();
         gl::setDefaultShaderVars();
     }
