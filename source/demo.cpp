@@ -6,6 +6,45 @@
 using namespace ci;
 using namespace ci::gl;
 
+namespace
+{
+    // imgui runs entirely in framebuffer pixels here: CinderImGui feeds it toPixels()'d
+    // display and mouse coordinates and DisplayFramebufferScale stays at 1 (see setup()).
+    // So the default metrics -- a 13px font, 8px padding -- are physical pixels, and the
+    // whole UI comes out half-size on a 2x display. Scale the style and the font by the
+    // window's content scale to get point-sized widgets back. A conventional display
+    // reports a scale of 1, where this is a no-op.
+    //
+    // Re-checked every frame rather than once at startup, so dragging the window onto a
+    // display of a different density rescales the UI, and so we never have to ask for the
+    // content scale during setup(), where some backends have yet to compute it.
+    // Returns true when the scale changed, so the caller can re-fit windows that are
+    // holding a size measured at the old one.
+    bool sync_imgui_content_scale(float content_scale)
+    {
+        // Captured before anything has scaled it: the first call is after ImGui::Initialize().
+        static const ImGuiStyle unscaled_style = ImGui::GetStyle();
+        static float applied_scale = 1.f;
+
+        if (! std::isfinite(content_scale) || content_scale <= 0.f || content_scale == applied_scale)
+            return false;
+
+        // ScaleAllSizes() scales the style in place and truncates as it goes, so rescale the
+        // pristine copy rather than compounding a correction onto the current values.
+        ImGuiStyle& style = ImGui::GetStyle();
+        style = unscaled_style;
+        style.ScaleAllSizes(content_scale);
+
+        // Fonts are baked on demand in imgui 1.92 and the GL backend advertises
+        // ImGuiBackendFlags_RendererHasTextures, so this re-rasterizes the atlas at the
+        // larger size instead of filtering a 13px bitmap up.
+        style.FontScaleDpi = content_scale;
+
+        applied_scale = content_scale;
+        return true;
+    }
+}
+
 void nbody::Demo::setup()
 {
     // Cinder already reports io.DisplaySize in pixels via toPixels(), so DisplayFramebufferScale has
@@ -304,6 +343,12 @@ void nbody::Demo::update()
 
     // Update gui
     {
+        // Before the first Begin(), so the window's initial auto-fit uses scaled metrics.
+        // A zero size asks imgui to re-fit: any size restored from imgui.ini, or left over
+        // from another display, was measured against a different font size and would clip.
+        if (sync_imgui_content_scale(getWindowContentScale()))
+            ImGui::SetNextWindowSize(ImVec2(0, 0));
+
         ImGui::Begin("Settings");
         int app_hz = int(floor(1.f / delta_time));
         ImGui::Text("framerate: %dhz", app_hz);
