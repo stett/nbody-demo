@@ -14,6 +14,10 @@ void nbody::Demo::setup()
     // rect landed above the real 1024px framebuffer and the whole UI was scissored away.
     ImGui::Initialize();
 
+    // Prefer the GPU when one is usable. Best effort: a false return just leaves the
+    // sim on its default CPU variant, and the combo shows why.
+    sim.set_variant(nbody::Variant::GpuBarnesHut);
+
     setWindowSize(1024, 1024);
 
     //rng.seed(42);
@@ -148,8 +152,10 @@ void nbody::Demo::setup()
     setup_sim_data();
 
     // Create and populate VBOs containing particle and bounds data
-    vbo_particles = gl::Vbo::create(GL_ARRAY_BUFFER, sim.bodies.size() * 3, nullptr, GL_DYNAMIC_DRAW);
-    vbo_bounds = gl::Vbo::create(GL_ARRAY_BUFFER, sim.acc_tree.nodes().size() * 7, nullptr, GL_DYNAMIC_DRAW);
+    vbo_particles = gl::Vbo::create(GL_ARRAY_BUFFER,
+        sim.bodies().size() * floats_per_particle * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+    vbo_bounds = gl::Vbo::create(GL_ARRAY_BUFFER,
+        sim.nodes().size() * floats_per_bound * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
     update_gpu_data();
 
     gl::enableDepthWrite();
@@ -160,20 +166,22 @@ void nbody::Demo::setup()
 
 void nbody::Demo::spawn_galaxy(uint32_t num, nbody::util::DiskArgs args)
 {
-    sim.bodies.resize(sim.bodies.size() + num);
-    nbody::util::disk(sim.bodies.end() - num, sim.bodies.end(), args);
+    std::vector<nbody::Body>& bodies = sim.mutable_bodies();
+    bodies.resize(bodies.size() + num);
+    nbody::util::disk(bodies.end() - num, bodies.end(), args);
 }
 
 void nbody::Demo::spawn_cube(uint32_t num, nbody::util::CubeArgs args)
 {
-    sim.bodies.resize(sim.bodies.size() + num);
-    nbody::util::cube(sim.bodies.end() - num, sim.bodies.end(), args);
+    std::vector<nbody::Body>& bodies = sim.mutable_bodies();
+    bodies.resize(bodies.size() + num);
+    nbody::util::cube(bodies.end() - num, bodies.end(), args);
 }
 
 void nbody::Demo::setup_sim_data()
 {
     // remove all bodies from the sim
-    sim.bodies.clear();
+    sim.mutable_bodies().clear();
 
     // fill the void with evenly spaced stars
     //spawn_cube(target_num_elems, { .size=sim.size });
@@ -181,7 +189,8 @@ void nbody::Demo::setup_sim_data()
 
 
     // add a disk galaxy at the origin
-    spawn_galaxy(target_num_elems, { .center={0,0,0}, .axis={0,0,1}, .vel={0,0,0} });
+    // designators must follow DiskArgs' member order (center, vel, axis)
+    spawn_galaxy(target_num_elems, { .center={0,0,0}, .vel={0,0,0}, .axis={0,0,1} });
 
     //spawn_galaxy(target_num_elems, { .center={-250,0,0}, .axis={0,0,1}, .vel={0,40,0} });
     //spawn_galaxy(target_num_elems, { .center={250,0,0},  .axis={0,1,0}, .vel={0,-40,0} });
@@ -196,31 +205,35 @@ void nbody::Demo::setup_sim_data()
 
 void nbody::Demo::update_gpu_data()
 {
-    // Update the CPU buffer for particle data
-    gpu_particle_data.resize(sim.bodies.size() * 8);
-    for (size_t i = 0; i < sim.bodies.size(); i++)
+    // Update the CPU buffer for particle data. Read-only: bind const so this per-frame
+    // loop never takes mutable access.
+    const std::vector<nbody::Body>& bodies = sim.bodies();
+    gpu_particle_data.resize(bodies.size() * floats_per_particle);
+    for (size_t i = 0; i < bodies.size(); i++)
     {
-        nbody::Body& body = sim.bodies[i];
-        gpu_particle_data[(i * 4) + 0] = (body.pos.x);
-        gpu_particle_data[(i * 4) + 1] = (body.pos.y);
-        gpu_particle_data[(i * 4) + 2] = (body.pos.z);
-        gpu_particle_data[(i * 4) + 3] = (body.radius);
+        const nbody::Body& body = bodies[i];
+        gpu_particle_data[(i * floats_per_particle) + 0] = (body.pos.x);
+        gpu_particle_data[(i * floats_per_particle) + 1] = (body.pos.y);
+        gpu_particle_data[(i * floats_per_particle) + 2] = (body.pos.z);
+        gpu_particle_data[(i * floats_per_particle) + 3] = (body.radius);
     }
 
     // Update the GPU buffer
     vbo_particles->bufferData(gpu_particle_data.size() * sizeof(float), gpu_particle_data.data(), GL_DYNAMIC_DRAW);
 
-    if (draw_bh_bounds)
+    // not every simulation variant builds a tree, so tolerate there being none
+    const nbody::bh::Tree* bh_tree = sim.tree();
+    if (draw_bh_bounds && bh_tree)
     {
         // Update the CPU buffer for tree data
         // Create and populate VBO containing bounds data
-        const size_t num_nodes = sim.acc_tree.nodes().size();
+        const size_t num_nodes = bh_tree->nodes().size();
         gpu_bounds_data.clear();
-        gpu_bounds_data.reserve(7 * num_nodes);
+        gpu_bounds_data.reserve(floats_per_bound * num_nodes);
         float max_potential = 0;
         float avg_potential = 0;
         const float num_nodes_inv = 1.f / float(num_nodes);
-        for (const nbody::bh::Node& node : sim.acc_tree.nodes())
+        for (const nbody::bh::Node& node : bh_tree->nodes())
         {
             const vec3 half = vec3(node.bounds.size * .5f);
             const vec3 bounds_center = vec3(node.bounds.center.x, node.bounds.center.y, node.bounds.center.z);
@@ -232,7 +245,7 @@ void nbody::Demo::update_gpu_data()
             // get gravitational potential at the center of this node and store it in GPU data
             const nbody::Vector& center = node.bounds.center;
             float potential = 0;
-            sim.acc_tree.apply(center, [&potential, &center](const nbody::bh::Node& node) {
+            bh_tree->apply(center, [&potential, &center](const nbody::bh::Node& node) {
                 const vec3 delta = vec3(node.com.x, node.com.y, node.com.z) - vec3(center.x, center.y, center.z);
                 potential += node.mass / dot(delta, delta);
             });
@@ -240,47 +253,41 @@ void nbody::Demo::update_gpu_data()
             avg_potential += potential * num_nodes_inv;
             gpu_bounds_data.emplace_back(potential);
         }
-        const float max_potential_inv = max_potential > std::numeric_limits<float>::epsilon() ? 1.f / max_potential : 0;
         const float avg_potential_inv = avg_potential > std::numeric_limits<float>::epsilon() ? 1.f / avg_potential : 0;
-        for (size_t i = 0; i < gpu_bounds_data.size(); i += 7)
+        for (size_t i = 0; i < gpu_bounds_data.size(); i += floats_per_bound)
         {
             float& potential = gpu_bounds_data[i+6];
             potential = std::min(1.f, potential * avg_potential_inv);
         }
         vbo_bounds->bufferData(gpu_bounds_data.size() * sizeof(float), gpu_bounds_data.data(), GL_DYNAMIC_DRAW);
     }
-}
-
-void nbody::Demo::update_selected_body()
-{
-    /*
-    vec3 glm_ray_origin;
-    vec3 glm_ray_direction;
-    mouse_ray(glm_ray_origin, glm_ray_direction);
-    const bh3::Vector ray_origin = { glm_ray_origin.x, glm_ray_origin.y, glm_ray_origin.z };
-    const bh3::Vector ray_direction = { glm_ray_direction.x, glm_ray_direction.y, glm_ray_direction.z };
-    sim.bhtree.ray_query(ray_origin, ray_direction, [this](const bh3::Node& node)
+    else
     {
-        // if this node has children, keep digging
-        if (node.children > 0)
-            return true;
-
-        // if this node is a child, test against the element in the node
-        sim.bodies[node.]
-    });
-     */
+        // draw() derives its vertex count from this buffer, so it has to be emptied rather
+        // than left holding the last tree a variant happened to build.
+        gpu_bounds_data.clear();
+    }
 }
 
 void nbody::Demo::resize()
 {
-    // Cinder derives the viewport from glfwGetFramebufferSize() in RendererImplGlfwGl::defaultResize().
-    // During startup on macOS that can report the window as still retina-backed, before GLFW settles
-    // the NSView for a non-high-density app, so a 1024pt window bakes in a 2048px viewport and nothing
-    // re-runs the query afterwards. That put the scene's center in the top-right corner until the first
-    // manual resize. Set the viewport from the window size ourselves, which is authoritative here
-    // because getContentScale() is 1 while high-density display is disabled.
+#if ! defined(CINDER_MSW)
+    // Cinder derives the viewport from glfwGetFramebufferSize() in
+    // RendererImplGlfwGl::defaultResize(). During startup on macOS that can report the
+    // window as still retina-backed, before GLFW settles the NSView for a non-high-density
+    // app, so a 1024pt window bakes in a 2048px viewport and nothing re-runs the query
+    // afterwards, leaving the scene off-centre until the first manual resize. Set the
+    // viewport from the window size ourselves.
+    //
+    // Not on MSW, where that renderer already sets it correctly and calling toPixels()
+    // here is actively harmful: setWindowSize() in setup() dispatches resize()
+    // synchronously, and WindowImplMsw has its size before its display, so getSize() is
+    // correct while getContentScale() is still uninitialised. Their product is nonsense,
+    // and the same toPixels() path feeds imgui's DisplaySize, so the next NewFrame()
+    // fails "Invalid DisplaySize value!" and aborts.
     const ivec2 size_px = ci::app::toPixels(getWindowSize());
     gl::viewport(0, 0, size_px.x, size_px.y);
+#endif
 
     camera.setPerspective(60, getWindowAspectRatio(), 1, 1e5 );
     gl::setMatrices(camera );
@@ -300,17 +307,77 @@ void nbody::Demo::update()
         ImGui::Begin("Settings");
         int app_hz = int(floor(1.f / delta_time));
         ImGui::Text("framerate: %dhz", app_hz);
-        const int bhtree_percent = int(100.f * float(sim.acc_tree.nodes().size()) / float(sim.acc_tree.nodes().capacity()));
-        ImGui::Text("node capacity: %d (%d%%)", (int)sim.acc_tree.nodes().size(), bhtree_percent);
+        if (const nbody::bh::Tree* t = sim.tree())
+        {
+            const size_t used = t->nodes().size();
+            const size_t cap = t->nodes().capacity();
+            const int bhtree_percent = cap ? int(100.f * float(used) / float(cap)) : 0;
+            ImGui::Text("node capacity: %d (%d%%)", (int)used, bhtree_percent);
+        }
+        else
+        {
+            ImGui::Text("node capacity: n/a");
+        }
         ImGui::Checkbox("run simulation", &run_simulation);
         int sim_hz = int(ceil(1.f / sim_dt));
         if (ImGui::SliderInt("sim hz", &sim_hz, 1.f, 120.f)) { sim_dt = 1.f / float(sim_hz); }
         if (ImGui::SliderFloat("sim t-scale", &sim_dt_scale, .0f, 1.f)) { }
         if (ImGui::Button("tick simulation")) { one_tick = true; }
         if (ImGui::Button("reset simulation")) { setup_sim_data(); }
-#if NBODY_GPU
-        if (ImGui::Checkbox("gpu acceleration", &sim.use_gpu)) { }
-#endif
+
+        // simulation variant
+        {
+            const nbody::VariantInfo& current = nbody::Sim::info(sim.variant());
+            if (ImGui::BeginCombo("variant", current.name))
+            {
+                for (const nbody::VariantInfo& info : nbody::Sim::variants())
+                {
+                    // Latch this before the push. `info` refers into the live variant
+                    // table, and a failed switch below marks that same entry
+                    // unavailable, so re-reading info.available for the pop would
+                    // underflow the style stack.
+                    const bool greyed = !info.available;
+
+                    // Grey out unavailable entries by hand rather than with
+                    // BeginDisabled, which the ImGui bundled with Cinder predates. They
+                    // stay clickable on purpose: set_variant refuses safely and reports
+                    // why, so clicking a greyed entry explains itself.
+                    if (greyed)
+                        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(.5f, .5f, .5f, 1.f));
+
+                    if (ImGui::Selectable(info.name, info.variant == sim.variant()))
+                    {
+                        if (sim.set_variant(info.variant))
+                        {
+                            variant_error.clear();
+
+                            // The incoming solver adopts the bodies but not an acceleration
+                            // structure, so build one now. Without this the tree wireframe
+                            // and the node-capacity readout stay empty until the next step,
+                            // which never comes while the simulation is paused.
+                            sim.accelerate();
+                        }
+                        else
+                        {
+                            variant_error = sim.last_error();
+                        }
+                    }
+
+                    if (ImGui::IsItemHovered())
+                        ImGui::SetTooltip("%s", greyed ? info.unavailable_reason.c_str() : info.description);
+
+                    if (greyed)
+                        ImGui::PopStyleColor();
+                }
+                ImGui::EndCombo();
+            }
+            if (!variant_error.empty())
+                ImGui::TextColored(ImVec4(1.f, .4f, .4f, 1.f), "%s", variant_error.c_str());
+        }
+
+        bool wrap_space = sim.wrap();
+        if (ImGui::Checkbox("wrap space", &wrap_space)) { sim.set_wrap(wrap_space); }
+
         if (ImGui::Checkbox("show gravity tree", &draw_bh_bounds)) { }
         if (ImGui::Checkbox("show coordinate axes", &draw_axes)) { }
 
@@ -404,12 +471,6 @@ void nbody::Demo::mouseDown(MouseEvent event)
     {
         mouse_world_drag_origin = mouse_world_pos();
         mouse_drag = true;
-        /*
-        const vec3 mp = mouse_world_pos();
-        const nbody::Vector pos = {mp.x, mp.y, mp.z};
-        const nbody::Vector axis = {0,0,1};
-        spawn_galaxy(pos, axis, target_num_elems);
-         */
     }
 }
 
@@ -462,10 +523,10 @@ void nbody::Demo::draw()
         gl::enableVertexAttribArray(0);
         gl::enableVertexAttribArray(1);
         gl::enableVertexAttribArray(2);
-        gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), (void*)(0*sizeof(float)));
-        gl::vertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 7*sizeof(float), (void*)(3*sizeof(float)));
-        gl::vertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, 7*sizeof(float), (void*)(6*sizeof(float)));
-        gl::drawArrays(GL_POINTS, 0, (GLsizei)sim.acc_tree.nodes().size());
+        gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, floats_per_bound*sizeof(float), (void*)(0*sizeof(float)));
+        gl::vertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, floats_per_bound*sizeof(float), (void*)(3*sizeof(float)));
+        gl::vertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, floats_per_bound*sizeof(float), (void*)(6*sizeof(float)));
+        gl::drawArrays(GL_POINTS, 0, (GLsizei)(gpu_bounds_data.size() / floats_per_bound));
         vbo_bounds->unbind();
         gl::setDefaultShaderVars();
     }
@@ -473,11 +534,11 @@ void nbody::Demo::draw()
     if (draw_axes)
     {
         gl::color(1, .2, .2, .5);
-        gl::drawLine(vec3(-sim.size, 0, 0), vec3(sim.size, 0, 0));
+        gl::drawLine(vec3(-sim.size(), 0, 0), vec3(sim.size(), 0, 0));
         gl::color(.2, 1, .2, .5);
-        gl::drawLine(vec3(0, -sim.size, 0), vec3(0, sim.size, 0));
+        gl::drawLine(vec3(0, -sim.size(), 0), vec3(0, sim.size(), 0));
         gl::color(.2, .2, 1, .5);
-        gl::drawLine(vec3(0, 0, -sim.size), vec3(0, 0, sim.size));
+        gl::drawLine(vec3(0, 0, -sim.size()), vec3(0, 0, sim.size()));
     }
 
     {
@@ -485,67 +546,13 @@ void nbody::Demo::draw()
         vbo_particles->bind();
         gl::enableVertexAttribArray(0);
         gl::enableVertexAttribArray(1);
-        gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 4*sizeof(float), nullptr);
-        gl::vertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, 4*sizeof(float), (void*)(3*sizeof(float)));
-        gl::drawArrays(GL_POINTS, 0, (GLsizei) sim.bodies.size());
+        gl::vertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, floats_per_particle*sizeof(float), nullptr);
+        gl::vertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, floats_per_particle*sizeof(float), (void*)(3*sizeof(float)));
+        gl::drawArrays(GL_POINTS, 0, (GLsizei)(gpu_particle_data.size() / floats_per_particle));
         vbo_particles->unbind();
         gl::setDefaultShaderVars();
     }
 
-    /*
-    if (draw_selection)
-    {
-        if (0 <= selected_elem && selected_elem < sim.bodies.size())
-        {
-            gl::color(1, 0, 0, 1);
-            const nbody::Vector& nbpos = sim.bodies[selected_elem].pos;
-            const vec3 pos = vec3(nbpos.x, nbpos.y, nbpos.z);
-            gl::drawSphere(pos, particle_radius * 2);
-
-            size_t num_interactions = 0;
-            sim.acc_tree.apply({ pos.x, pos.y, pos.z }, [&](const nbody::bh::Node& node)
-			{
-				++num_interactions;
-
-                // select a color based on tree depth
-				const float percent = 1.f - (node.bounds.size / sim.bhtree.bounds().size);
-				const float a = percent * percent;
-				gl::color(1 - a * .5, a, 0, .25 + .75 * a);
-
-                // draw line from selected element to this node's com
-                const vec3& com = vec3(node.com.x, node.com.y, node.com.z);
-				gl::drawLine(pos, com);
-
-                // if this node doesn't have children, outline it and draw crosshairs
-                // at the center of mass.
-                if (node.children != 0)
-                {
-                    const float bounds_size = node.bounds.size;
-                    const bh3::Vector bounds_center = node.bounds.center;
-                    gl::drawStrokedCube(vec3(bounds_center.x, bounds_center.y, bounds_center.z), vec3(bounds_size));
-                    gl::drawLine(com - vec3(bounds_size * .25, 0, 0), com + vec3(bounds_size * .25, 0, 0));
-                    gl::drawLine(com - vec3(0, bounds_size * .25, 0), com + vec3(0, bounds_size * .25, 0));
-                    gl::drawLine(com - vec3(0, 0, bounds_size * .25), com + vec3(0, 0, bounds_size * .25));
-                }
-			});
-        }
-    }
-     */
-
-    /*
-    if (draw_collisions)
-    {
-        gl::color(1,0,0,1);
-        for (uint32_t i = 0; i < sim.sbvhtree.num_intersections; ++i)
-        {
-            const uint32_t i0 = sim.sbvhtree.intersections[i].first;
-            const uint32_t i1 = sim.sbvhtree.intersections[i].second;
-            const nbody::Body& body0 = sim.bodies[i0];
-            const nbody::Body& body1 = sim.bodies[i1];
-            gl::drawLine(body0.pos, body1.pos);
-        }
-    }
-     */
 }
 
 vec3 nbody::Demo::homogeneous_to_world(const vec3& homo) const

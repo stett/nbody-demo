@@ -1,4 +1,6 @@
 #pragma once
+#define GLM_ENABLE_EXPERIMENTAL
+#include <string>
 #include "cinder/app/App.h"
 #include "cinder/gl/gl.h"
 #include "nbody/sim.h"
@@ -33,9 +35,7 @@ namespace nbody {
         void spawn_galaxy(uint32_t num, nbody::util::DiskArgs args);
         void spawn_cube(uint32_t num, nbody::util::CubeArgs args);
         void setup_sim_data();
-        void setup_acceleration_structure();
         void update_gpu_data();
-        void update_selected_body();
 
         // helpers
         vec3 homogeneous_to_world(const vec3& homo) const;
@@ -57,7 +57,12 @@ namespace nbody {
         GlslProgRef bounds_shader;
         GlslProgRef particle_shader;
 
-        // gpu data caches
+        // gpu data caches. the per-element float counts must match the vertex attribute
+        // layouts set up in setup(), and are what the draw calls derive their vertex
+        // counts from -- deriving those from the sim instead would draw bodies that have
+        // not been uploaded yet, since bodies can be spawned from an input handler.
+        static constexpr size_t floats_per_particle = 4;   // pos.xyz, radius
+        static constexpr size_t floats_per_bound = 7;      // min.xyz, max.xyz, potential
         std::vector<float> gpu_particle_data;
         VboRef vbo_particles;
         std::vector<float> gpu_bounds_data;
@@ -68,10 +73,10 @@ namespace nbody {
         bool run_simulation = false;
         bool draw_bh_bounds = false;
         bool draw_axes = false;
-        bool draw_selection = false;
-        bool draw_collisions = false;
-        int32_t selected_elem = 0;
         size_t target_num_elems = 4096;
+
+        // why the last variant switch failed; empty when it succeeded
+        std::string variant_error;
 
         // camera
         CameraPersp camera;

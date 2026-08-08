@@ -3,4 +3,4 @@
 	url = git@github.com:stett/nbody.git
 [submodule "external/Cinder"]
 	path = external/Cinder
-	url = git@github.com:stett/Cinder.git
+	url = https://github.com/cinder/Cinder.git

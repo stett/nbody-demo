@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.24)
 
 # Cinder's platform_macosx.cmake force-sets CMAKE_OSX_ARCHITECTURES to "arm64;x86_64"
 # when it is empty. That happens partway through add_subdirectory(external), so nbody's
@@ -15,14 +15,15 @@ project(nbody_demo)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Use GPU acceleration
-#set(nbody_gpu ON)
-add_compile_definitions(NBODY_GPU=1)
-
 # Stop windows from stomping min and max functions with macros
 if (WIN32)
     add_compile_definitions(NOMINMAX)
 endif()
+
+# Use the dynamic CRT. Cinder's platform_msw.cmake defaults a static (non-shared) build to
+# /MT, but only when this is undefined, so setting it here wins. Must precede
+# add_subdirectory(external) to apply to cinder's own targets.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 # add dependencies
 add_subdirectory(external)
@@ -37,6 +38,6 @@ set_target_properties(nbody_demo PROPERTIES WIN32_EXECUTABLE TRUE)
 set_target_properties(nbody_demo PROPERTIES LINKER_LANGUAGE CXX)
 target_compile_features(nbody_demo PRIVATE cxx_std_20)
 if (MSVC)
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_RELEASE} /MTd")
+    # runtime library is selected via CMAKE_MSVC_RUNTIME_LIBRARY above
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /ZI")
 endif()
