@@ -31,3 +31,6 @@ imgui.ini
 !.claude/settings.json
 AGENTS.md
 GEMINI.md
+
+# CPM cache for the tracy profiler's dependencies
+.cpm-cache/
