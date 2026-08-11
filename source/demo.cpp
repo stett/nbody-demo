@@ -2,6 +2,7 @@
 #include <cmath>
 #include <random>
 #include "cinder/CinderImGui.h"
+#include "nbody/profile.h"
 
 using namespace ci;
 using namespace ci::gl;
@@ -47,6 +48,9 @@ namespace
 
 void nbody::Demo::setup()
 {
+    // Otherwise the profiler labels the thread every zone here lands on with a bare id.
+    NBODY_PROFILE_THREAD("main");
+    NBODY_PROFILE_ZONE();
     // Cinder already reports io.DisplaySize in pixels via toPixels(), so DisplayFramebufferScale has
     // to stay at 1. Scaling it by the display's content scale made imgui's GL backend size its
     // framebuffer at DisplaySize * 2, and it derives scissor rects from that height -- so every clip
@@ -205,6 +209,7 @@ void nbody::Demo::setup()
 
 void nbody::Demo::spawn_galaxy(uint32_t num, nbody::util::DiskArgs args)
 {
+    NBODY_PROFILE_ZONE();
     std::vector<nbody::Body>& bodies = sim.mutable_bodies();
     bodies.resize(bodies.size() + num);
     nbody::util::disk(bodies.end() - num, bodies.end(), args);
@@ -212,6 +217,7 @@ void nbody::Demo::spawn_galaxy(uint32_t num, nbody::util::DiskArgs args)
 
 void nbody::Demo::spawn_cube(uint32_t num, nbody::util::CubeArgs args)
 {
+    NBODY_PROFILE_ZONE();
     std::vector<nbody::Body>& bodies = sim.mutable_bodies();
     bodies.resize(bodies.size() + num);
     nbody::util::cube(bodies.end() - num, bodies.end(), args);
@@ -219,6 +225,8 @@ void nbody::Demo::spawn_cube(uint32_t num, nbody::util::CubeArgs args)
 
 void nbody::Demo::setup_sim_data()
 {
+    NBODY_PROFILE_ZONE();
+
     // remove all bodies from the sim
     sim.mutable_bodies().clear();
 
@@ -237,6 +245,11 @@ void nbody::Demo::setup_sim_data()
 
 void nbody::Demo::update_gpu_data()
 {
+    // Repacking every body into the interleaved vertex format and handing it to GL, every
+    // frame, whether or not the simulation advanced. Sits between the solver finishing and
+    // anything being drawn, so it is worth seeing next to both.
+    NBODY_PROFILE_ZONE();
+
     // Update the CPU buffer for particle data. Read-only: bind const so this per-frame
     // loop never takes mutable access.
     const std::vector<nbody::Body>& bodies = sim.bodies();
@@ -327,6 +340,8 @@ void nbody::Demo::resize()
 
 void nbody::Demo::update()
 {
+    NBODY_PROFILE_ZONE();
+
     // setWindowSize() in setup() dispatches a resize synchronously on some backends,
     // which drives update()/draw() before the shaders and VBOs below exist.
     if (! setup_complete)
@@ -336,6 +351,8 @@ void nbody::Demo::update()
 
     // Update gui
     {
+        NBODY_PROFILE_ZONE_NAMED("imgui");
+
         // Before the first Begin(), so the window's initial auto-fit uses scaled metrics.
         // A zero size asks imgui to re-fit: any size restored from imgui.ini, or left over
         // from another display, was measured against a different font size and would clip.
@@ -456,12 +473,14 @@ void nbody::Demo::update()
 
     if (one_tick)
     {
+        NBODY_PROFILE_ZONE_NAMED("sim step");
         one_tick = false;
         sim.update(sim_dt);
     }
     else {
         // if running simulation, tick it
         if (run_simulation) {
+            NBODY_PROFILE_ZONE_NAMED("sim step");
             sim_dt_accum += delta_time;
             size_t sim_steps = 1;
             while (sim_dt_accum > sim_dt && sim_steps-- > 0) {
@@ -530,6 +549,8 @@ void nbody::Demo::mouseUp(MouseEvent event)
 
 void nbody::Demo::draw()
 {
+    NBODY_PROFILE_ZONE();
+
     if (! setup_complete)
         return;
 
@@ -555,6 +576,7 @@ void nbody::Demo::draw()
 
     if (draw_bh_bounds)
     {
+        NBODY_PROFILE_ZONE_NAMED("draw bh bounds");
         gl::ScopedGlslProg glsl_scope(bounds_shader);
         gl::ScopedDepth depth_scope(false);
         vbo_bounds->bind();
@@ -580,6 +602,7 @@ void nbody::Demo::draw()
     }
 
     {
+        NBODY_PROFILE_ZONE_NAMED("draw particles");
         gl::ScopedGlslProg glsl_scope(particle_shader);
         vbo_particles->bind();
         gl::enableVertexAttribArray(0);
@@ -591,6 +614,12 @@ void nbody::Demo::draw()
         gl::setDefaultShaderVars();
     }
 
+    // Ends the frame for the profiler, which divides its entire timeline by these. Last
+    // statement in draw(), draw() being the last thing cinder calls in a frame.
+    //
+    // The early return above leaves the frames before setup finishes unmarked, which is
+    // correct: nothing is being drawn in them.
+    NBODY_PROFILE_FRAME();
 }
 
 vec3 nbody::Demo::homogeneous_to_world(const vec3& homo) const
