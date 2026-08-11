@@ -40,4 +40,11 @@ target_compile_features(nbody_demo PRIVATE cxx_std_20)
 if (MSVC)
     # runtime library is selected via CMAKE_MSVC_RUNTIME_LIBRARY above
     set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /ZI")
+
+    # Matches the flags nbody builds itself with -- see the note there for what they do and
+    # why they are not the default. Repeated here rather than inherited because Vector and
+    # friends are defined in nbody's public headers, so they are compiled into this target
+    # too; building the same inline functions two different ways would leave the linker to
+    # pick one, and it may not pick the fast one.
+    target_compile_options(nbody_demo PRIVATE $<$<NOT:$<CONFIG:Debug>>:/arch:AVX2 /fp:contract>)
 endif()
