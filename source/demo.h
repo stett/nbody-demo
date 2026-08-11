@@ -73,7 +73,7 @@ namespace nbody {
         bool run_simulation = false;
         bool draw_bh_bounds = false;
         bool draw_axes = false;
-        size_t target_num_elems = 4096;
+        size_t target_num_elems = 1 << 18;
 
         // why the last variant switch failed; empty when it succeeded
         std::string variant_error;

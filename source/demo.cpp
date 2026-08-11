@@ -224,11 +224,11 @@ void nbody::Demo::setup_sim_data()
 
     // add a disk galaxy at the origin
     // designators must follow DiskArgs' member order (center, vel, axis)
-    spawn_galaxy(target_num_elems, { .center={0,0,0}, .vel={0,0,0}, .axis={0,0,1} });
+    //spawn_galaxy(target_num_elems, { .center={0,0,0}, .vel={0,0,0}, .axis={0,0,1} });
 
     // add two colliding disk galaxies
-    //spawn_galaxy(target_num_elems * .5f, { .center={-250,0,0}, .vel={0,40,0},  .axis={0, 1.f/sqrtf(2.f),  1.f/sqrtf(2.f)} });
-    //spawn_galaxy(target_num_elems * .5f, { .center={250,0,0},  .vel={0,-40,0}, .axis={0, -1.f/sqrtf(2.f), 1.f/sqrtf(2.f)} });
+    spawn_galaxy(target_num_elems * .5f, { .center={-250,0,0}, .vel={0,40,0},  .axis={0, 1.f/sqrtf(2.f),  1.f/sqrtf(2.f)} });
+    spawn_galaxy(target_num_elems * .5f, { .center={250,0,0},  .vel={0,-40,0}, .axis={0, -1.f/sqrtf(2.f), 1.f/sqrtf(2.f)} });
 
     // this forces an update to the acceleration structure, which is
     // needed if we want to update the structure rendering
@@ -421,7 +421,7 @@ void nbody::Demo::update()
 
         ImGui::Text("# stars: %d", int(target_num_elems));
         int log_num_stars = std::log2(target_num_elems);
-        if (ImGui::SliderInt("log2(# stars)", &log_num_stars, 0, 18))
+        if (ImGui::SliderInt("log2(# stars)", &log_num_stars, 0, 20))
         {
             target_num_elems = std::pow(2, log_num_stars);
             setup_sim_data();
