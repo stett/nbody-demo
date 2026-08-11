@@ -222,20 +222,13 @@ void nbody::Demo::setup_sim_data()
     // remove all bodies from the sim
     sim.mutable_bodies().clear();
 
-    // fill the void with evenly spaced stars
-    //spawn_cube(target_num_elems, { .size=sim.size });
-    //spawn_cube(target_num_elems, { .size=1000 });
-
-
     // add a disk galaxy at the origin
     // designators must follow DiskArgs' member order (center, vel, axis)
     spawn_galaxy(target_num_elems, { .center={0,0,0}, .vel={0,0,0}, .axis={0,0,1} });
 
-    //spawn_galaxy(target_num_elems, { .center={-250,0,0}, .axis={0,0,1}, .vel={0,40,0} });
-    //spawn_galaxy(target_num_elems, { .center={250,0,0},  .axis={0,1,0}, .vel={0,-40,0} });
-
-    //spawn_galaxy(target_num_elems, { .center={-500,0,0}, .axis={0,0,1}, .vel={0,0,0} });
-    //spawn_galaxy(target_num_elems, { .center={300,0,0}, .axis={0,1,0}, .vel={0,0,.001} });
+    // add two colliding disk galaxies
+    //spawn_galaxy(target_num_elems * .5f, { .center={-250,0,0}, .vel={0,40,0},  .axis={0, 1.f/sqrtf(2.f),  1.f/sqrtf(2.f)} });
+    //spawn_galaxy(target_num_elems * .5f, { .center={250,0,0},  .vel={0,-40,0}, .axis={0, -1.f/sqrtf(2.f), 1.f/sqrtf(2.f)} });
 
     // this forces an update to the acceleration structure, which is
     // needed if we want to update the structure rendering
