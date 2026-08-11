@@ -48,7 +48,6 @@ namespace
 
 void nbody::Demo::setup()
 {
-    // Otherwise the profiler labels the thread every zone here lands on with a bare id.
     NBODY_PROFILE_THREAD("main");
     NBODY_PROFILE_ZONE();
     // Cinder already reports io.DisplaySize in pixels via toPixels(), so DisplayFramebufferScale has
@@ -245,9 +244,7 @@ void nbody::Demo::setup_sim_data()
 
 void nbody::Demo::update_gpu_data()
 {
-    // Repacking every body into the interleaved vertex format and handing it to GL, every
-    // frame, whether or not the simulation advanced. Sits between the solver finishing and
-    // anything being drawn, so it is worth seeing next to both.
+    // Runs every frame whether or not the simulation advanced.
     NBODY_PROFILE_ZONE();
 
     // Update the CPU buffer for particle data. Read-only: bind const so this per-frame
@@ -614,11 +611,7 @@ void nbody::Demo::draw()
         gl::setDefaultShaderVars();
     }
 
-    // Ends the frame for the profiler, which divides its entire timeline by these. Last
-    // statement in draw(), draw() being the last thing cinder calls in a frame.
-    //
-    // The early return above leaves the frames before setup finishes unmarked, which is
-    // correct: nothing is being drawn in them.
+    // Last statement in the last thing cinder calls, so this is the frame boundary.
     NBODY_PROFILE_FRAME();
 }
 

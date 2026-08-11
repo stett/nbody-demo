@@ -32,6 +32,5 @@ imgui.ini
 AGENTS.md
 GEMINI.md
 
-# CPM caches the tracy profiler dependencies here, deliberately near the source root:
-# nested under the build tree the paths outgrow the windows 260 character limit.
+# CPM cache for the tracy profiler's dependencies
 .cpm-cache/
