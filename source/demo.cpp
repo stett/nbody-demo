@@ -361,8 +361,7 @@ void nbody::Demo::update()
             ImGui::SetNextWindowSize(ImVec2(0, 0));
 
         ImGui::Begin("Settings");
-        int app_hz = int(floor(1.f / delta_time));
-        ImGui::Text("framerate: %dhz", app_hz);
+        ImGui::Text("framerate: %dhz", int(hz_display + .5f));
         if (const nbody::bh::Tree* t = sim.tree())
         {
             const size_t used = t->nodes().size();
@@ -451,6 +450,22 @@ void nbody::Demo::update()
     double new_time = getElapsedSeconds();
     delta_time = float(new_time - time);
     time = new_time;
+
+    // Roll the displayed framerate up over a second at a time. Averaged over the window
+    // rather than sampled at the end of it, so one slow frame cannot stand in for all of them.
+    hz_accum_time += delta_time;
+    ++hz_accum_frames;
+    if (hz_accum_time >= 1.f)
+    {
+        hz_display = float(hz_accum_frames) / hz_accum_time;
+        hz_accum_time = 0;
+        hz_accum_frames = 0;
+    }
+    else if (hz_display == 0 && hz_accum_time > 0)
+    {
+        // Nothing to roll yet: show the partial window rather than 0hz for the first second.
+        hz_display = float(hz_accum_frames) / hz_accum_time;
+    }
 
     // Update camera
     {

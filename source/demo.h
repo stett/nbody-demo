@@ -49,6 +49,13 @@ namespace nbody {
         // time
         double time = 0;
         float delta_time = 0;
+
+        // Frames and seconds since the displayed rate was last recomputed. The instantaneous
+        // 1/delta_time is unreadable -- it changes every frame and swings with any hitch.
+        float hz_accum_time = 0;
+        int hz_accum_frames = 0;
+        float hz_display = 0;
+
         float sim_dt = 1.f / 60.f;
         float sim_dt_accum = 0;
         float sim_dt_scale = 1.f;
