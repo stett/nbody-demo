@@ -339,6 +339,10 @@ void nbody::Demo::update()
 {
     NBODY_PROFILE_ZONE();
 
+    // Which solver the frame ran on, so a capture can be told apart from one taken with a
+    // different variant selected.
+    NBODY_PROFILE_ZONE_TEXT(nbody::Sim::info(sim.variant()).name);
+
     // setWindowSize() in setup() dispatches a resize synchronously on some backends,
     // which drives update()/draw() before the shaders and VBOs below exist.
     if (! setup_complete)
