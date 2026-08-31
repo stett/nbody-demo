@@ -69,11 +69,16 @@ namespace nbody {
         // counts from -- deriving those from the sim instead would draw bodies that have
         // not been uploaded yet, since bodies can be spawned from an input handler.
         static constexpr size_t floats_per_particle = 4;   // pos.xyz, radius
-        static constexpr size_t floats_per_bound = 7;      // min.xyz, max.xyz, potential
+        static constexpr size_t floats_per_bound = 7;      // min.xyz, max.xyz, weight
         std::vector<float> gpu_particle_data;
         VboRef vbo_particles;
         std::vector<float> gpu_bounds_data;
         VboRef vbo_bounds;
+
+        // Scratch for Sim::write_debug_nodes(). Solvers do not own their debug nodes -- they
+        // advertise a count and fill a span -- so one buffer here serves every variant the
+        // sim is switched through, and re-fills rather than re-allocates each frame.
+        std::vector<nbody::DebugNode> debug_nodes;
 
         // settings
         bool setup_complete = false;

@@ -197,7 +197,7 @@ void nbody::Demo::setup()
     vbo_particles = gl::Vbo::create(GL_ARRAY_BUFFER,
         sim.bodies().size() * floats_per_particle * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
     vbo_bounds = gl::Vbo::create(GL_ARRAY_BUFFER,
-        sim.nodes().size() * floats_per_bound * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
+        sim.debug_node_count() * floats_per_bound * sizeof(float), nullptr, GL_DYNAMIC_DRAW);
     update_gpu_data();
 
     gl::enableDepthWrite();
@@ -263,43 +263,48 @@ void nbody::Demo::update_gpu_data()
     // Update the GPU buffer
     vbo_particles->bufferData(gpu_particle_data.size() * sizeof(float), gpu_particle_data.data(), GL_DYNAMIC_DRAW);
 
-    // not every simulation variant builds a tree, so tolerate there being none
-    const nbody::bh::Tree* bh_tree = sim.tree();
-    if (draw_bh_bounds && bh_tree)
+    // Not every variant builds an acceleration structure, so tolerate there being none --
+    // and only ask for one when it is going to be drawn. Nothing is cached solver-side, so
+    // filling this costs a barnes-hut traversal per node every time it is asked for.
+    size_t num_debug_nodes = 0;
+    if (draw_bh_bounds)
+    {
+        // resize() on a member, so this allocates on the first frame and re-fills after
+        debug_nodes.resize(sim.debug_node_count());
+        num_debug_nodes = sim.write_debug_nodes(debug_nodes);
+    }
+
+    if (num_debug_nodes > 0)
     {
         // Update the CPU buffer for tree data
         // Create and populate VBO containing bounds data
-        const size_t num_nodes = bh_tree->nodes().size();
         gpu_bounds_data.clear();
-        gpu_bounds_data.reserve(floats_per_bound * num_nodes);
-        float max_potential = 0;
-        float avg_potential = 0;
-        const float num_nodes_inv = 1.f / float(num_nodes);
-        for (const nbody::bh::Node& node : bh_tree->nodes())
+        gpu_bounds_data.reserve(floats_per_bound * num_debug_nodes);
+        float avg_weight = 0;
+        const float num_nodes_inv = 1.f / float(num_debug_nodes);
+        for (size_t i_node = 0; i_node < num_debug_nodes; ++i_node)
         {
-            const vec3 half = vec3(node.bounds.size * .5f);
-            const vec3 bounds_center = vec3(node.bounds.center.x, node.bounds.center.y, node.bounds.center.z);
+            const nbody::DebugNode& node = debug_nodes[i_node];
+
+            // DebugNode::size is a full edge length, matching nbody::Bounds -- see
+            // nbody/debug.h, where the opposite convention next door is spelled out
+            const vec3 half = vec3(node.size * .5f);
+            const vec3 bounds_center = vec3(node.center.x, node.center.y, node.center.z);
             for (size_t i = 0; i < 3; ++i)
                 gpu_bounds_data.emplace_back(bounds_center[i] - half[i]);
             for (size_t i = 0; i < 3; ++i)
                 gpu_bounds_data.emplace_back(bounds_center[i] + half[i]);
 
-            // get gravitational potential at the center of this node and store it in GPU data
-            const nbody::Vector& center = node.bounds.center;
-            float potential = 0;
-            bh_tree->apply(center, [&potential, &center](const nbody::bh::Node& node) {
-                const vec3 delta = vec3(node.com.x, node.com.y, node.com.z) - vec3(center.x, center.y, center.z);
-                potential += node.mass / dot(delta, delta);
-            });
-            max_potential = std::max(max_potential, potential);
-            avg_potential += potential * num_nodes_inv;
-            gpu_bounds_data.emplace_back(potential);
+            // The solver hands over a raw per-node scalar; normalizing it into a colour is
+            // this side's policy, so the average is accumulated here and folded in below.
+            avg_weight += node.weight * num_nodes_inv;
+            gpu_bounds_data.emplace_back(node.weight);
         }
-        const float avg_potential_inv = avg_potential > std::numeric_limits<float>::epsilon() ? 1.f / avg_potential : 0;
+        const float avg_weight_inv = avg_weight > std::numeric_limits<float>::epsilon() ? 1.f / avg_weight : 0;
         for (size_t i = 0; i < gpu_bounds_data.size(); i += floats_per_bound)
         {
-            float& potential = gpu_bounds_data[i+6];
-            potential = std::min(1.f, potential * avg_potential_inv);
+            float& weight = gpu_bounds_data[i+6];
+            weight = std::min(1.f, weight * avg_weight_inv);
         }
         vbo_bounds->bufferData(gpu_bounds_data.size() * sizeof(float), gpu_bounds_data.data(), GL_DYNAMIC_DRAW);
     }
@@ -362,17 +367,15 @@ void nbody::Demo::update()
 
         ImGui::Begin("Settings");
         ImGui::Text("framerate: %dhz", int(hz_display + .5f));
-        if (const nbody::bh::Tree* t = sim.tree())
-        {
-            const size_t used = t->nodes().size();
-            const size_t cap = t->nodes().capacity();
-            const int bhtree_percent = cap ? int(100.f * float(used) / float(cap)) : 0;
-            ImGui::Text("node capacity: %d (%d%%)", (int)used, bhtree_percent);
-        }
+        // Polled every frame, wireframe or not, so it has to stay off write_debug_nodes()
+        // and its per-node traversal. The percentage this used to show was size/capacity
+        // against build_tree()'s reserve(count << 2) -- a bh::Tree tuning number that no
+        // longer has a home in a neutral interface, and one the Tracy plot in
+        // detail/tree.h already reports.
+        if (const size_t num_nodes = sim.debug_node_count())
+            ImGui::Text("tree nodes: %d", (int)num_nodes);
         else
-        {
-            ImGui::Text("node capacity: n/a");
-        }
+            ImGui::Text("tree nodes: n/a");
         ImGui::Checkbox("run simulation", &run_simulation);
         int sim_hz = int(ceil(1.f / sim_dt));
         if (ImGui::SliderInt("sim hz", &sim_hz, 1.f, 120.f)) { sim_dt = 1.f / float(sim_hz); }
