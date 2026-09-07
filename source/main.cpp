@@ -6,6 +6,8 @@ namespace
     void prepareSettings(ci::app::App::Settings *settings)
     {
         settings->setHighDensityDisplayEnabled(true);
+        //settings->disableFrameRate();
+        settings->setFrameRate(144);
     }
 }
 

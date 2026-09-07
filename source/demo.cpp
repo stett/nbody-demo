@@ -58,7 +58,7 @@ void nbody::Demo::setup()
 
     // Prefer the GPU when one is usable. Best effort: a false return just leaves the
     // sim on its default CPU variant, and the combo shows why.
-    sim.set_variant(nbody::Variant::GpuBarnesHut);
+    sim.set_variant(nbody::Variant::CpuBarnesHutMorton);
 
     setWindowSize(1024, 1024);
 
@@ -378,7 +378,7 @@ void nbody::Demo::update()
             ImGui::Text("tree nodes: n/a");
         ImGui::Checkbox("run simulation", &run_simulation);
         int sim_hz = int(ceil(1.f / sim_dt));
-        if (ImGui::SliderInt("sim hz", &sim_hz, 1.f, 120.f)) { sim_dt = 1.f / float(sim_hz); }
+        if (ImGui::SliderInt("sim hz", &sim_hz, 1.f, 144.f)) { sim_dt = 1.f / float(sim_hz); }
         if (ImGui::SliderFloat("sim t-scale", &sim_dt_scale, .0f, 1.f)) { }
         if (ImGui::Button("tick simulation")) { one_tick = true; }
         if (ImGui::Button("reset simulation")) { setup_sim_data(); }
